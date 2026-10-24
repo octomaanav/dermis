@@ -1,4 +1,11 @@
-# Dermis MLX90393 array bring-up harness
+# Dermis v0 firmware
+
+The active `src/main.cpp` is the ESP32-S3 production BLE firmware for four
+MLX90393 magnetometers and one BMI160. It advertises as `Dermis-S3` and sends
+framed JSON notifications at 10 Hz. Run `tools/ble_receive.py` on macOS to
+reassemble frames and optionally record JSONL. The older interactive MLX/HX711
+bring-up harness is retained under `mlx_firmware/`; the command-menu sections
+below describe that archived harness.
 
 This is a PlatformIO/Arduino bench harness for four MLX90393 magnetometers on one ESP32-S3 SPI bus. It provides probe, isolation, configuration, noise, streaming, rate-sweep, and temperature commands plus Python logging, plotting, and analysis tools.
 
@@ -9,8 +16,8 @@ Power every breakout from 3.3 V and connect all grounds. Leave `TRIG`, `INT`, `S
 | Signal | ESP32 pin | Notes |
 |---|---:|---|
 | SCLK | GPIO18 | shared by S1-S4 |
-| MISO | GPIO14 | shared by S1-S4 |
-| MOSI | GPIO13 | shared by S1-S4 |
+| MISO | GPIO13 | shared by all SPI sensors |
+| MOSI | GPIO14 | shared by all SPI sensors |
 | CS S1 | GPIO21 | dedicated |
 | CS S2 | GPIO4 | dedicated |
 | CS S3 | GPIO16 | dedicated |
@@ -18,9 +25,27 @@ Power every breakout from 3.3 V and connect all grounds. Leave `TRIG`, `INT`, `S
 | 3V3 | 3.3 V | never 5 V |
 | GND | GND | common ground |
 
-All pin assignments live in [`include/pins.h`](include/pins.h). GPIO14 is the SPI MISO pin. The firmware drives all four CS pins output-high **before** calling `SPI.begin()` so no device sees a floating protocol-select input.
+All pin assignments live in [`include/pins.h`](include/pins.h). The firmware drives all chip-select pins output-high **before** calling `SPI.begin()` so no device sees a floating protocol-select input.
 
-> **ESP32-S3 USB note:** GPIO19/20 are reserved for native USB. MISO was moved to GPIO14 so the native USB Serial/JTAG connector remains available for flashing and monitoring.
+> **ESP32-S3 USB note:** GPIO19/20 are reserved for native USB, leaving the native USB Serial/JTAG connector available for flashing and monitoring.
+
+### HX711 load-cell wiring
+
+| HX711 pin | ESP32-S3 pin |
+|---|---:|
+| DT / DOUT | GPIO1 |
+| SCK | GPIO2 |
+| VCC | 3.3 V only |
+| GND | GND |
+
+For the specified load cell, connect `E+ / E- / A- / A+` to `red / black /
+white / green`. If applied force produces the opposite delta sign from the
+desired convention, swap `A+` and `A-` or invert the sign during calibration.
+
+Send `l` at the serial menu to enter load-cell mode. Remove all force during
+the two-second tare. The firmware idles the MLX sensors, holds every CS high,
+and stops SPI while the HX711 streams `t_us,raw,delta_counts`. Press any key to
+exit; SPI is restarted and all four MLX sensors are reconfigured automatically.
 
 ## Sensor configuration and limits
 
@@ -75,6 +100,7 @@ Open the monitor at 921600 baud and send one character:
 | `s` | stream CSV until any key; `#RATE` metadata is emitted once per second |
 | `r` | acquire for two seconds each at 1/2/4/8 MHz and report rate/errors |
 | `t` | read raw temperature and the datasheet typical °C conversion |
+| `l` | pause MLX acquisition, tare and stream HX711 raw/delta counts until any key |
 | `f` | select the next runtime SPI frequency, up to the 10 MHz chip limit |
 | `?` | print help |
 
