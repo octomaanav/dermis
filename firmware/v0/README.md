@@ -1,9 +1,13 @@
 # Dermis v0 firmware
 
-The active `src/main.cpp` is the ESP32-S3 production BLE firmware for four
-MLX90393 magnetometers and one BMI160. It advertises as `Dermis-S3` and sends
-framed JSON notifications at 10 Hz. Run `tools/ble_receive.py` on macOS to
-reassemble frames and optionally record JSONL. The older interactive MLX/HX711
+The active `src/main.cpp` is the ESP32-S3 firmware for four MLX90393
+magnetometers and one BMI160. It creates the WPA2 Wi-Fi hotspot
+`Dermis-Glove` (password `dermis-demo`) and serves JSON frames over WebSocket
+at `ws://192.168.4.1:81/ws`, at 10 Hz. Join that hotspot from the Mac, then run
+`tools/wifi_receive.py` to record the decoded frames and optionally forward
+them to the local simulator. The ESP is the server, so it never needs the
+Mac's IP address. Change the demo password in `src/main.cpp` before a public
+deployment. The older interactive MLX/HX711
 bring-up harness is retained under `mlx_firmware/`; the command-menu sections
 below describe that archived harness.
 
@@ -172,4 +176,3 @@ This prints per-axis statistics, interval/jitter statistics, estimated drops, sa
 ## Datasheet uncertainty
 
 The field scale, status layout, commands, 10 MHz SPI maximum, conversion timing, and temperature conversion come from Melexis MLX90393 datasheet revision 012. Temperature in °C uses the *typical* 46244 LSB at 25 °C and 45.2 LSB/°C values, so it is useful for diagnostics, not precision thermometry. Without hardware attached here, actual frame rate, signal/noise, isolation behavior, and sensor ordering codes remain to be measured on the bench.
-

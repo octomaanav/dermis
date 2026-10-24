@@ -1,26 +1,27 @@
 #include <Adafruit_MLX90393.h>
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include <NimBLEDevice.h>
 #include <SPI.h>
+#include <WiFi.h>
+#include <WebSocketsServer.h>
 #include <esp_timer.h>
 #include "pins.h"
 
 namespace {
 constexpr uint32_t SPI_HZ = 1000000, PERIOD_US = 100000;
-constexpr char BLE_SERVICE_UUID[] = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-constexpr char BLE_TX_UUID[] = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
-constexpr size_t BLE_MAX_PACKET = 180, BLE_HEADER = 8;
+constexpr char WIFI_SSID[] = "Dermis-Glove";
+constexpr char WIFI_PASSWORD[] = "dermis-demo";  // WPA2 password; change before a public deployment.
+constexpr uint16_t WIFI_WS_PORT = 81;
 constexpr uint8_t SM = 0x30, RM = 0x40, TXYZ = 0x0F;
 constexpr char const *NAMES[] = {"index_tip","thumb_tip","middle_tip","thenar_apb"};
 constexpr char const *IDS[] = {"P-0001","P-0002","P-0003","P-0004"};
 Adafruit_MLX90393 mlx[SENSOR_COUNT];
 bool mlx_ok[SENSOR_COUNT]{}, imu_ok=false;
-NimBLECharacteristic *ble_tx=nullptr;
 char uid[32], json[2300];
-uint32_t frame=0, sent=0, dropped=0, errors=0, clients=0, last_log=0;
-uint16_t ble_packet_size=20;
+uint32_t frame=0, sent=0, dropped=0, errors=0, last_log=0;
 int64_t next_frame=0;
+WebSocketsServer websocket(WIFI_WS_PORT);
+uint8_t websocket_clients=0;
 
 struct Mag { float x,y,z,t; int64_t us; uint8_t status=0xFF; bool valid=false,sat=false,sed=false; };
 struct Imu { float ax,ay,az,gx,gy,gz,t; int64_t us; uint32_t st; bool valid=false; };
@@ -90,41 +91,34 @@ size_t makeJson(const Mag m[],const Imu&i,int64_t now){
   x["t_us"]=i.us;x["sensortime"]=i.st;JsonArray f=x["flags"].to<JsonArray>();if(!imu_ok)f.add("NOT_FOUND");else if(!i.valid)f.add("SPI_ERROR");x["valid"]=i.valid;
   return serializeJson(d,json,sizeof(json));
 }
-class BleCallbacks:public NimBLEServerCallbacks{
-  void onConnect(NimBLEServer*,ble_gap_conn_desc*)override{clients++;Serial.println("BLE connected");}
-  void onDisconnect(NimBLEServer*)override{if(clients)clients--;Serial.println("BLE disconnected");NimBLEDevice::startAdvertising();}
-  void onMTUChange(uint16_t mtu,ble_gap_conn_desc*)override{ble_packet_size=min((size_t)(mtu-3),(size_t)BLE_MAX_PACKET);Serial.printf("BLE MTU=%u payload=%u\n",mtu,ble_packet_size);}
-};
-void startBle(){
-  NimBLEDevice::init("Dermis-S3");NimBLEDevice::setMTU(185);
-  NimBLEServer *server=NimBLEDevice::createServer();server->setCallbacks(new BleCallbacks());
-  NimBLEService *service=server->createService(BLE_SERVICE_UUID);
-  ble_tx=service->createCharacteristic(BLE_TX_UUID,NIMBLE_PROPERTY::READ|NIMBLE_PROPERTY::NOTIFY);
-  service->start();NimBLEAdvertising *advertising=NimBLEDevice::getAdvertising();advertising->addServiceUUID(BLE_SERVICE_UUID);advertising->setScanResponse(true);advertising->start();
-  Serial.println("BLE advertising as Dermis-S3");
+void startWifi(){
+  WiFi.mode(WIFI_AP);
+  if(!WiFi.softAP(WIFI_SSID,WIFI_PASSWORD)){Serial.println("WiFi hotspot failed to start");return;}
+  websocket.begin();
+  Serial.printf("WiFi hotspot: %s  WebSocket: ws://%s:%u/ws\n",WIFI_SSID,WiFi.softAPIP().toString().c_str(),WIFI_WS_PORT);
 }
-bool sendBle(size_t length){
-  if(!clients||!ble_tx)return false;
-  const size_t data_size=ble_packet_size-BLE_HEADER;
-  const uint8_t count=(length+data_size-1)/data_size;
-  uint8_t packet[BLE_MAX_PACKET];
-  for(uint8_t index=0;index<count;index++){
-    const size_t offset=index*data_size,count_bytes=min(data_size,length-offset);
-    packet[0]=0xD3;packet[1]=1;packet[2]=frame;packet[3]=frame>>8;packet[4]=frame>>16;packet[5]=frame>>24;packet[6]=index;packet[7]=count;
-    memcpy(packet+BLE_HEADER,json+offset,count_bytes);ble_tx->notify(packet,count_bytes+BLE_HEADER);delay(5);
+void websocketEvent(uint8_t client,WStype_t type,uint8_t*,size_t){
+  if(type==WStype_CONNECTED){
+    websocket_clients++;Serial.printf("WebSocket receiver connected: %u (clients=%u)\n",client,websocket_clients);
+  }else if(type==WStype_DISCONNECTED){
+    if(websocket_clients)websocket_clients--;
+    Serial.printf("WebSocket receiver disconnected: %u (clients=%u)\n",client,websocket_clients);
   }
-  return true;
+}
+bool sendWebsocket(size_t length){
+  return websocket_clients&&websocket.broadcastTXT(json,length);
 }
 }
 void setup(){
   Serial.begin(115200);delay(250);csHigh();SPI.begin(PIN_SPI_SCLK,PIN_SPI_MISO,PIN_SPI_MOSI,-1);size_t count=0;
   for(size_t i=0;i<SENSOR_COUNT;i++){mlx_ok[i]=configMlx(i);count+=mlx_ok[i];}imu_ok=configImu();
   snprintf(uid,sizeof(uid),"DERMIS-%012llX",(unsigned long long)ESP.getEfuseMac());Serial.printf("Sensors: MLX=%u/4 IMU=%u/1\n",(unsigned)count,imu_ok?1:0);
-  startBle();last_log=millis();next_frame=esp_timer_get_time();
+  startWifi();websocket.onEvent(websocketEvent);last_log=millis();next_frame=esp_timer_get_time();
 }
 void loop(){
+  websocket.loop();
   int64_t now=esp_timer_get_time();if(now>=next_frame){next_frame+=PERIOD_US;if(now-next_frame>(int64_t)PERIOD_US)next_frame=now+PERIOD_US;
     Mag m[SENSOR_COUNT]{};Imu i{};readMlx(m);readImu(i);bool bad=!i.valid;for(const auto&v:m)bad|=!v.valid;if(bad)errors++;
-    size_t n=makeJson(m,i,now);if(n&&n+1<sizeof(json)){if(clients){if(sendBle(n))sent++;else dropped++;}}else dropped++;frame++;}
-  if(millis()-last_log>=5000){Serial.printf("BLE frames=%lu connected=%lu dropped=%lu sensor_errors=%lu\n",(unsigned long)sent,(unsigned long)clients,(unsigned long)dropped,(unsigned long)errors);last_log=millis();}
+    size_t n=makeJson(m,i,now);if(n&&n+1<sizeof(json)){if(sendWebsocket(n))sent++;else dropped++;}else dropped++;frame++;}
+  if(millis()-last_log>=5000){Serial.printf("WiFi frames=%lu clients=%u dropped=%lu sensor_errors=%lu\n",(unsigned long)sent,websocket_clients,(unsigned long)dropped,(unsigned long)errors);last_log=millis();}
 }
