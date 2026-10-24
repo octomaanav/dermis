@@ -1,0 +1,5 @@
+# Held-out suite for final reporting only. Do not tune against it. Seeds 2,000,000+.
+# Positions are sampled from the training ranges; friction is fixed per scenario, cycling
+# through four values that span the training range.
+name: heldout_v1
+generate: {seed_start: 2000000, count: 50, frictions: [0.4, 0.6, 0.8, 1.0]}

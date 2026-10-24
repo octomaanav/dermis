@@ -1,0 +1,14 @@
+# Behavioral cloning WITH simulated contact observations (finger normal forces + contact flags).
+name: bc_contact
+data: data/episodes/scripted
+out: runs/bc_contact
+feature_groups: [proprio, object, target, contact]
+history: 2                 # observation frames stacked (t-1, t); start of episode padded with obs[0]
+label: expert_actions      # scripted: clean expert label; keyboard/glove episodes fall back to issued actions
+success_only: true
+val_fraction: 0.2          # whole episodes
+split_seed: 0
+seed: 0
+device: cpu                # "auto" picks cuda/mps if available
+model: {hidden: [256, 256], dropout: 0.0}
+train: {epochs: 60, batch_size: 256, lr: 0.001, weight_decay: 0.00001}

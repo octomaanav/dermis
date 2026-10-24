@@ -1,0 +1,10 @@
+# python -m dermis study --config configs/study.yaml   (run `benchmark` first: it collects the episodes)
+title: "BC with vs. without simulated contact: data scaling x training seeds"
+out: runs/study
+data: runs/benchmark/episodes
+suite: configs/suites/heldout_v1.json
+demo_counts: [10, 25, 50, 200]
+train_seeds: [0, 1, 2]
+policies:
+  - {name: bc_no_contact, config: configs/bc_no_contact.yaml}
+  - {name: bc_contact, config: configs/bc_contact.yaml}

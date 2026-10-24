@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dermis"
+version = "0.1.0"
+description = "Tactile-glove demonstrations -> behavioral cloning for grasp-lift-place (hardware-free core)"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pandas",
+    "pybullet",
+    "torch",
+    "pyyaml",
+    "matplotlib",
+    "jsonschema",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+serial = ["pyserial"]
+
+[project.scripts]
+dermis = "dermis.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+dermis = ["dashboard/static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: runs the simulator for many episodes"]

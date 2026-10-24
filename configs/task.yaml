@@ -1,0 +1,12 @@
+# TaskConfig overrides (all optional; defaults in src/dermis/sim/env.py). Units: m, s, N, kg.
+control_hz: 30
+physics_hz: 240
+timeout_s: 15.0
+object_mass: 0.2
+friction_range: [0.4, 1.0]
+object_x_range: [0.45, 0.62]
+object_y_range: [-0.18, -0.02]
+target_x_range: [0.45, 0.62]
+target_y_range: [0.06, 0.18]
+target_radius: 0.035
+excess_force_n: 30.0       # simulated benchmark threshold, per-finger normal force; not a clinical measure

@@ -1,0 +1,9 @@
+# python -m dermis benchmark --config configs/benchmark.yaml
+title: "Scripted expert vs BC without contact vs BC with contact"
+out: runs/benchmark
+collect: {episodes: 200, seed_start: 0, noise: 0.03}
+suite: configs/suites/heldout_v1.json
+include_expert: true
+policies:
+  - {name: bc_no_contact, config: configs/bc_no_contact.yaml}
+  - {name: bc_contact, config: configs/bc_contact.yaml}

@@ -5,3 +5,9 @@ __pycache__/
 *.csv
 *.jitter.png
 *.pth
+data/
+runs/
+results/
+*.egg-info/
+.DS_Store
+.pytest_cache/
