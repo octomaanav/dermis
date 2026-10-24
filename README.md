@@ -39,6 +39,9 @@ ARCHFLAGS="-arch arm64" CFLAGS="-Dfdopen=fdopen" CXXFLAGS="-isystem $SDK/usr/inc
 | `src/dermis/teleop/` | keyboard / glove demonstrations (`demo`) |
 | `src/dermis/server/` | TCP telemetry server and the armed TCP teleop path ([docs/tcp_teleop.md](docs/tcp_teleop.md)) |
 | `src/dermis/dashboard/` | local web dashboard |
+| `src/dermis/cup/` | separate **fragile_cup** experiment: hold a cup under a ramping load proxy; TEACH / AUTONOMOUS live modes ([docs/fragile_cup.md](docs/fragile_cup.md)) |
+| `src/dermis/wipe/` | wiping feasibility study (wipe_v1): physics checks, controller comparison, glove pad-trial tools; decision NO-GO ([docs/wipe_feasibility.md](docs/wipe_feasibility.md)) |
+| `src/dermis/glove/` | glove bring-up: pod discovery, inspector with labelled trials, two-point grip calibration, armed grip control, process-based ingestion; fragile_cup teaching workflow ([docs/glove_bringup.md](docs/glove_bringup.md)) |
 | `configs/` | training, benchmark and suite configs |
 | `firmware/` | ESP32-S3 firmware (v0), Dermis Wire v1 spec, schemas, example fixtures, reference decoder |
 | `tests/` | pytest suite |
@@ -202,6 +205,25 @@ source -> RawMessage -> adapter (decoded_frame.schema.json -> TelemetryFrame) ->
 - Evaluation results and comparisons.
 
 It shows only data that exists on disk or in the stream: no hardcoded metrics and no confidence scores.
+
+For launch options, the judge walkthrough, metric definitions and measured overhead of the extended console, see [docs/dashboard.md](docs/dashboard.md).
+
+## fragile_cup (separate experiment)
+
+The question: do simulated finger–object contact observations help a learned grip adapt when a held cup's load ramps up? The arm is fixed and only the grip effort is controlled. The cup is rigid, its "contents" are an external-force load proxy, and "damage" is a simulated contact-load threshold. Its metrics are reported separately from the grasp-lift-place benchmark and never merged with it. Full details, including the audit of the original pipeline, are in [docs/fragile_cup.md](docs/fragile_cup.md).
+
+```sh
+python -m dermis cup check-task                                      # fixed efforts vs feedback controllers (dev suite)
+python -m dermis cup benchmark --config configs/cup/benchmark.yaml   # collect -> train both -> held-out eval, 3 seeds
+python -m dermis cup smoke-test                                      # ~25 s pipeline check
+python -m dermis cup teach                                           # GUI: human grip (keyboard), recorded
+python -m dermis cup judge                                           # GUI: trained checkpoints; Pour / Reset / paired comparison
+```
+
+Held-out results (60 scenarios, 3 training seeds):
+- **Primary arm** (slip-reflex demonstrator, which uses no contact): BC with contact averaged 0.944 success, BC without contact 0.922. The per-seed results overlap, so there is no reliable difference.
+- **Secondary arm** (hybrid demonstrator, which uses contact): BC with contact 1.000, BC without contact 0.978 (4 sustained-damage failures out of 180).
+- **Fixed grip:** a constant 8 N grip reaches 58/60 on the same scenarios, so this task leaves little room for adaptation.
 
 ## Limitations and unverified items
 

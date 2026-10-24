@@ -118,6 +118,9 @@ class TelemetryPipeline:
         self.device_id = None
         self.last_recv_ns: int | None = None
         self.last_snapshot: Snapshot | None = None
+        # Discovery: every pod/channel that has appeared in an accepted frame, including pods outside
+        # pod_order (those are counted in unknown_pods and kept out of the fixed-order arrays).
+        self.seen_pods: dict = {}
 
     def _reset_stream(self) -> None:
         P = len(self.pod_order)
@@ -201,6 +204,14 @@ class TelemetryPipeline:
         self.last_recv_ns = f.t_recv_ns
         self.counters["accepted"] += 1
 
+        for loc, pod in f.pods.items():
+            e = self.seen_pods.setdefault(loc, {"pod_id": pod.pod_id, "mag": False, "imu": False, "frames": 0,
+                                                "in_pod_order": loc in self.pod_order})
+            e["pod_id"] = pod.pod_id
+            e["mag"] |= pod.mag is not None
+            e["imu"] |= pod.imu is not None
+            e["frames"] += 1
+            e["last_frame"] = f.frame
         pod_set = frozenset(f.pods)
         if self._pod_set is not None and pod_set != self._pod_set:
             self.counters["pod_set_changes"] += 1

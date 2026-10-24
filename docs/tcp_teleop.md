@@ -104,6 +104,28 @@ python -m pytest tests/test_tcp_*.py                      # unit tests + the sam
 
 The same programs are also available as `python -m dermis.server.dev_sender ...`.
 
+### WebSocket source bridge
+
+The receiver above speaks TCP NDJSON. If the producer instead exposes a WebSocket stream, run the
+bridge beside the receiver. Each WebSocket **text** message must be one decoded-frame JSON object;
+the bridge immediately writes it as one NDJSON record to the local receiver (no frame batching).
+
+```sh
+# Terminal 1: existing Dermis receiver
+python -m dermis teleop --host 127.0.0.1 --port 8765 --gui --auto
+
+# Terminal 2: use the mock until the real URL is available
+python -m dermis mock-ws-server --host 127.0.0.1 --port 8766 --path /frames --rate 100
+
+# Terminal 3: replace --url with the real ws:// or wss:// endpoint later
+python -m dermis websocket-bridge --url ws://127.0.0.1:8766/frames --tcp-host 127.0.0.1 --tcp-port 8765
+```
+
+For a real service, add `--subscribe '{"type":"subscribe","topic":"frames"}'` if it requires a
+post-connect subscription message, and repeat `--header 'Authorization: Bearer TOKEN'` for required
+handshake credentials. The bridge reconnects automatically after failures. Keep the TCP receiver on
+`127.0.0.1`: it is only the local bridge that needs to reach it.
+
 ### Hands-free mode (`--auto`) and arm down/up (`--tilt-z`)
 
 ```sh

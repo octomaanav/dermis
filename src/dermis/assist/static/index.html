@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teach an Assistive Hand</title>
+<link rel="stylesheet" href="/console.css">
+<style>
+  html, body { font-size: 16px; }
+  #bar { gap: 14px; }
+  .modebig { font-size: 20px; font-weight: 900; letter-spacing: .06em; padding: 6px 14px; border-radius: 8px; color: #061015; }
+  .m-MANUAL { background: var(--keyboard); } .m-ASSISTED { background: var(--warn); } .m-AUTONOMOUS { background: var(--auto); }
+  .layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: var(--gap); }
+  .steps button { display: block; width: 100%; text-align: left; margin: 0 0 6px; padding: 10px 12px; border-radius: 8px;
+    background: var(--s2); border: 1px solid var(--line); color: var(--muted); cursor: pointer; font-weight: 600; font-size: 15px; }
+  .steps button.on { background: var(--s3); color: var(--ink); border-color: var(--accent); }
+  .hold { font-size: 34px; font-weight: 900; letter-spacing: .04em; }
+  .h-HOLDING { color: var(--ok); } .h-MOVING { color: var(--warn); } .h-DROPPED, .h-EXCESSIVE { color: var(--bad); }
+  .h-COMPLETED { color: var(--accent); } .h-RELEASED { color: var(--muted); }
+  .kv { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .kv div { background: var(--s2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .kv b { display: block; font-size: 22px; } .kv span { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; }
+  canvas { width: 100%; height: 180px; display: block; background: var(--s2); border-radius: 8px; }
+  .big { font-size: 18px; } .instr { font-size: 18px; line-height: 1.5; margin: 0 0 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; } td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: left; }
+  .lbl { font-size: 11px; color: var(--warn); text-transform: uppercase; letter-spacing: .08em; }
+  .events { font-family: var(--mono); font-size: 12px; max-height: 150px; overflow: auto; color: var(--muted); }
+  .note { font-size: 12px; color: var(--dim); }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .kv { grid-template-columns: repeat(2, 1fr); } }
+</style>
+</head>
+<body>
+<div id="bar">
+  <div id="brand">TEACH AN <span>ASSISTIVE HAND</span></div>
+  <span id="mode" class="modebig m-MANUAL">MANUAL</span>
+  <span class="pill"><span class="k">human input</span> <b id="src">-</b></span>
+  <span class="pill" id="recpill"><span class="k">recording</span> <b id="rec">off</b></span>
+  <span class="pill"><span class="k">control</span> <b id="perf">-</b></span>
+  <span class="spacer"></span>
+  <span class="note">Simulated assistive-grasp research prototype - not a prosthesis. 3-D view: native PyBullet window.</span>
+</div>
+<main>
+<div class="layout">
+  <div>
+    <div class="card steps" id="steps"></div>
+    <div class="card"><h2>Step</h2><div id="panel"></div></div>
+  </div>
+  <div class="grid">
+    <div class="card">
+      <h2>Hold status <span class="r small" id="phase"></span></h2>
+      <div class="row"><div class="hold" id="hold">-</div><div class="big muted" id="outcome"></div></div>
+      <div class="kv" style="margin-top:10px">
+        <div><span>human request</span><b id="kg">-</b></div>
+        <div><span>final effort (N m)</span><b id="ke">-</b></div>
+        <div><span>applied load (N, simulated)</span><b id="kl">-</b></div>
+        <div><span>mug movement (mm)</span><b id="kd">-</b></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Command: human request vs final robot command <span class="r small muted">last 8 s</span></h2>
+      <canvas id="c1"></canvas>
+      <div class="note"><span style="color:#60a5fa">human effort</span> &middot; <span style="color:#f59e0b">assistance effort</span>
+        &middot; <span style="color:#e6edf3">final effort</span> &middot; <span style="color:#22c55e">finger closure (measured)</span></div>
+    </div>
+    <div class="card">
+      <h2>Fingertip contact load <span class="lbl">simulated (PyBullet), not glove force</span></h2>
+      <canvas id="c2"></canvas>
+      <div class="note"><span style="color:#fb923c">index</span> &middot; <span style="color:#a78bfa">middle</span> &middot;
+        <span style="color:#ef4444">simulated threshold</span> &middot; <span style="color:#94a3b8">applied load proxy</span></div>
+    </div>
+    <div class="card"><h2>Events</h2><div class="events" id="events"></div></div>
+  </div>
+</div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const post = (p, b) => fetch(p, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(b || {})}).then(r => r.json());
+const cmd = (c, v) => post("/api/cmd", {cmd: c, value: v});
+let S = {}, step = 1, sel = new Set(), lastEp = null;
+const STEPS = ["Connect and calibrate", "Try the hand", "Record a demonstration", "Try assistance",
+               "Challenge the controller", "Inspect the episode", "Train and test (optional)"];
+
+function steps() {
+  $("steps").innerHTML = STEPS.map((s, i) => `<button class="${i + 1 === step ? "on" : ""}" onclick="go(${i + 1})">${i + 1}. ${s}</button>`).join("");
+}
+function go(n) { step = n; steps(); panel(); }
+
+function modeBtns() {
+  const auto = S.autonomous_available;
+  return `<div class="seg">
+    <button class="${S.mode === "MANUAL" ? "on" : ""}" onclick="cmd('mode','MANUAL')">MANUAL</button>
+    <button class="${S.mode === "ASSISTED - SCRIPTED" ? "on" : ""}" onclick="cmd('mode','ASSISTED - SCRIPTED')">ASSISTED - SCRIPTED</button>
+    <button class="${S.mode === "AUTONOMOUS - LEARNED" ? "on" : ""}" ${auto ? "" : "disabled"} title="${esc(S.policy_note)}"
+      onclick="cmd('mode','AUTONOMOUS - LEARNED')">AUTONOMOUS - LEARNED</button></div>
+    <div class="note">${esc(S.policy_note)}</div>`;
+}
+function gripBtns() {
+  return `<div class="row"><button class="btn" onclick="cmd('open')">Open (O)</button><button class="btn" onclick="cmd('g_down')">- grip (&darr;)</button>
+    <button class="btn" onclick="cmd('g_up')">+ grip (&uarr;)</button><button class="btn" onclick="cmd('close')">Close (C)</button></div>`;
+}
+function envBtns() {
+  return `<div class="row"><button class="btn" onclick="cmd('reset')">Reset same scenario (R)</button>
+    <button class="btn primary" onclick="cmd('add_load')">Add load (L)</button><button class="btn" onclick="cmd('next')">Next scenario (N)</button></div>`;
+}
+function panel() {
+  const glove = S.human_label === "GLOVE";
+  let h = "";
+  if (step === 1) {
+    const ch = Object.entries(S.channels || {}).map(([p, c]) => `<tr><td>${esc(p)}${c.required ? " *" : ""}</td><td class="${c.mag === "fresh" ? "ok" : c.mag === "stale" ? "warn" : "bad"}">${esc(c.mag)}</td><td>${esc(c.imu)}</td></tr>`).join("");
+    h = glove ? `<p class="instr">Hold your hand still with the pads untouched, press <b>Unloaded</b>. Then hold a comfortable pinch and press <b>Press</b>. Then <b>Calibrate</b> and <b>Arm</b>.</p>
+      <div class="row"><button class="btn" onclick="cmd('ref_unloaded')">1. Unloaded</button><button class="btn" onclick="cmd('ref_press')">2. Press</button>
+      <button class="btn primary" onclick="cmd('calibrate')">3. Calibrate</button><button class="btn primary" onclick="cmd('arm')">4. Arm</button>
+      <button class="btn danger" onclick="cmd('disarm')">Disarm</button></div>
+      <p class="big">Glove: <b>${esc(S.human_status)}</b> <span class="muted small">${esc(S.human_message)}</span></p>
+      <table><tr><th>pod (* required)</th><th>magnetometer</th><th>IMU</th></tr>${ch || "<tr><td colspan=3 class=muted>no frames yet</td></tr>"}</table>
+      <p class="note">Glove values are physical fingertip-pad deformation (magnetic change), not force.</p>`
+      : `<p class="instr">Keyboard input is active (no glove). Use &uarr;/&darr; to change the grip request, O to open, C to close.</p>
+         <p class="note">To use the glove, restart with <span class="mono">--input glove</span>.</p>`;
+  } else if (step === 2) {
+    h = `<p class="instr">Open and close the hand. The bar shows your request and the finger closure the motors actually reach.</p>${gripBtns()}${modeBtns()}`;
+  } else if (step === 3) {
+    h = `<p class="instr">Start recording, then <b>Add load</b> and adjust your grip while the mug gets heavier. The episode saves when it ends.</p>
+      <div class="row"><button class="btn ${S.recording ? "danger" : "primary"}" onclick="cmd('record')">${S.recording ? "Stop recording" : "Start recording (Space)"}</button></div>${gripBtns()}${envBtns()}`;
+  } else if (step === 4) {
+    h = `<p class="instr">Switch to <b>ASSISTED - SCRIPTED</b> and repeat the same scenario. Assistance can only <i>add</i> grip effort, up to a limit, and <b>opening always wins</b>.</p>${modeBtns()}${gripBtns()}${envBtns()}`;
+  } else if (step === 5) {
+    const rows = (S.paired || []).map(r => `<tr><td>${esc(r.mode)}</td><td>${r.seed}</td><td class="${r.success ? "ok" : "bad"}">${esc(r.termination)}</td><td>${r.peak_normal_n ?? ""}</td><td>${r.max_disp_mm ?? ""}</td></tr>`).join("");
+    const tally = {};
+    (S.paired || []).forEach(r => { tally[r.mode] = tally[r.mode] || [0, 0]; tally[r.mode][1]++; if (r.success) tally[r.mode][0]++; });
+    h = `<p class="instr"><b>Add load</b> starts the same bounded schedule every time. <b>Paired trial</b> runs the same grasp, mug, schedule and duration in each mode, one after another.</p>
+      ${envBtns()}<div class="row"><button class="btn primary" onclick="cmd('paired',['MANUAL','ASSISTED - SCRIPTED'])">Paired trial: Manual vs Assisted</button>
+      <button class="btn" ${S.autonomous_available ? "" : "disabled"} onclick="cmd('paired',['MANUAL','ASSISTED - SCRIPTED','AUTONOMOUS - LEARNED'])">+ Autonomous</button></div>
+      <p class="lbl">Interactive illustration with a person in the loop, not a controlled study.</p>
+      <p>${Object.entries(tally).map(([m, t]) => `<b>${esc(m)}</b>: ${t[0]}/${t[1]}`).join(" &middot; ") || '<span class="muted">no paired trials yet</span>'}</p>
+      <table><tr><th>mode</th><th>seed</th><th>outcome</th><th>peak contact N</th><th>max move mm</th></tr>${rows}</table>`;
+  } else if (step === 6) {
+    h = `<p class="instr">Pick an episode to see what was recorded: your request, the final command, simulated contact and the outcome.</p><div id="eplist" class="muted">loading...</div><div id="epview"></div>`;
+    loadEpisodes();
+  } else if (step === 7) {
+    h = `<p class="instr">Select recorded episodes, freeze them into a snapshot, train a candidate, evaluate it on development scenarios, then activate it explicitly.</p>
+      <div id="learn" class="muted">loading...</div>`;
+    loadLearn();
+  }
+  $("panel").innerHTML = h;
+}
+
+async function loadEpisodes() {
+  const eps = await (await fetch("/api/episodes")).json();
+  $("eplist").innerHTML = eps.length ? `<table>${eps.slice().reverse().map(e => `<tr><td><input type="checkbox" ${sel.has(e.id) ? "checked" : ""} onchange="tog('${e.id}',this.checked)"></td>
+     <td><a href="#" onclick="showEp('${e.id}');return false">${esc(e.id.slice(-20))}</a></td><td>${esc(e.label)}</td><td>${esc(e.mode)}</td><td>${esc(e.termination)}</td></tr>`).join("")}</table>`
+     : "No recorded episodes yet (step 3).";
+}
+function tog(id, on) { on ? sel.add(id) : sel.delete(id); }
+async function showEp(id) {
+  const d = await (await fetch("/api/episode?id=" + encodeURIComponent(id))).json();
+  lastEp = d;
+  $("epview").innerHTML = `<p class="big">${esc(d.meta.label)} &middot; ${esc(d.meta.mode)} &middot; seed ${d.meta.seed} &middot; <b>${esc(d.meta.termination)}</b></p>
+    <canvas id="e1"></canvas><canvas id="e2" style="margin-top:6px"></canvas><p class="note">${esc(d.simulated_note)}${d.meta.raw_recording ? " &middot; raw glove data: " + esc(d.meta.raw_recording) : ""}</p>`;
+  plot($("e1"), d.t, [[d.human_effort, "#60a5fa"], [d.assist_effort, "#f59e0b"], [d.final_effort, "#e6edf3"]], 0, 0.6);
+  plot($("e2"), d.t, [[d.normal_index, "#fb923c"], [d.normal_middle, "#a78bfa"], [d.load_n, "#94a3b8"]], 0, 30);
+}
+async function loadLearn() {
+  const L = await (await fetch("/api/learn/candidates")).json();
+  const rows = L.candidates.map(c => `<tr><td>${esc(c.name)}${c.active ? ' <span class="tag AUTONOMOUS">ACTIVE</span>' : ""}</td><td>${esc(c.state)}</td>
+     <td>${esc(c.training || (c.init_from ? "fine-tune" : "from scratch"))}</td><td>${esc(JSON.stringify(c.snapshot_counts))}</td>
+     <td>${c.dev_eval ? esc(c.dev_eval.success) : (L.jobs[c.name] || "-")}</td>
+     <td><button class="btn" onclick="evalC('${c.name}')" ${c.state === "done" ? "" : "disabled"}>Evaluate</button>
+         <button class="btn primary" onclick="actC('${c.name}')" ${c.dev_eval ? "" : "disabled"}>Activate</button></td></tr>`).join("");
+  $("learn").innerHTML = `<p>Selected episodes: <b>${sel.size}</b> (tick them in step 6).</p>
+    <div class="row"><input type="text" id="snapname" placeholder="snapshot name" value="demo-${Date.now() % 100000}">
+      <button class="btn" onclick="snap()" ${sel.size ? "" : "disabled"}>Freeze snapshot</button></div>
+    <div class="row" style="margin-top:6px"><input type="text" id="snappath" placeholder="snapshot path" size="34">
+      <button class="btn" onclick="train(false)">Train from scratch</button><button class="btn" onclick="train(true)">Fine-tune active checkpoint</button></div>
+    <div class="result" id="lres"></div>
+    <table><tr><th>candidate</th><th>state</th><th>training</th><th>data</th><th>dev result</th><th></th></tr>${rows}</table>
+    <p class="note">A candidate learns from your episodes only after its training finishes. The ACTIVE checkpoint is the one AUTONOMOUS uses.
+      One demonstration is usually not enough: measured on this task family, a few fresh demos alone did not produce a working policy; add more, or fine-tune.</p>`;
+}
+async function snap() {
+  const r = await post("/api/learn/snapshot", {name: $("snapname").value, ids: [...sel]});
+  $("lres").textContent = r.error || `snapshot ${r.snapshot}: ${r.manifest.episodes.length} episodes ${JSON.stringify(r.manifest.counts_by_source)}`;
+  if (r.snapshot) $("snappath").value = r.snapshot;
+}
+async function train(ft) {
+  const name = "cand-" + Date.now() % 100000;
+  const r = await post("/api/learn/train", {snapshot: $("snappath").value, name, fine_tune: ft});
+  $("lres").textContent = r.error || `${name}: training started (${r.training})`;
+  setTimeout(loadLearn, 1500);
+}
+async function evalC(n) { const r = await post("/api/learn/evaluate", {name: n}); $("lres").textContent = r.status || r.error; setTimeout(loadLearn, 1500); }
+async function actC(n) { const r = await post("/api/learn/activate", {name: n}); $("lres").textContent = r.error || `ACTIVE: ${r.active.checkpoint}`; setTimeout(loadLearn, 800); }
+
+function plot(cv, t, series, lo, hi, hline) {
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const g = cv.getContext("2d"); g.scale(dpr, dpr); g.clearRect(0, 0, w, h);
+  if (!t.length) return;
+  const t0 = t[0], t1 = t[t.length - 1] || 1, X = (x) => 4 + (w - 8) * (x - t0) / Math.max(1e-6, t1 - t0), Y = (v) => h - 4 - (h - 8) * (v - lo) / (hi - lo);
+  if (hline != null) { g.strokeStyle = "#ef4444"; g.setLineDash([5, 4]); g.beginPath(); g.moveTo(0, Y(hline)); g.lineTo(w, Y(hline)); g.stroke(); g.setLineDash([]); }
+  for (const [y, c] of series) {
+    g.strokeStyle = c; g.lineWidth = 2; g.beginPath(); let pen = false;
+    y.forEach((v, i) => { if (v == null) { pen = false; return; } pen ? g.lineTo(X(t[i]), Y(v)) : g.moveTo(X(t[i]), Y(v)); pen = true; }); g.stroke();
+  }
+  g.fillStyle = "#5d6a7b"; g.font = "11px sans-serif"; g.fillText(hi, 6, 12); g.fillText(lo, 6, h - 5);
+}
+
+async function poll() {
+  try { S = await (await fetch("/api/state")).json(); } catch (e) { setTimeout(poll, 500); return; }
+  const m = S.mode || "";
+  $("mode").textContent = m; $("mode").className = "modebig " + (m.startsWith("ASSISTED") ? "m-ASSISTED" : m.startsWith("AUTONOMOUS") ? "m-AUTONOMOUS" : "m-MANUAL");
+  $("src").textContent = m.startsWith("AUTONOMOUS") ? "DISCONNECTED (autonomous)" : S.source;
+  $("rec").textContent = S.recording ? "REC" : "off"; $("rec").className = S.recording ? "rec" : "";
+  const p = S.perf || {}; $("perf").textContent = `${p.control_hz ?? "-"} Hz (${p.sim_speed ?? "-"}x)${p.viewer_fps != null ? " · 3-D " + p.viewer_fps + " fps" : ""}`;
+  const hs = S.hold_state || "-"; $("hold").textContent = hs; $("hold").className = "hold h-" + hs.split(" ")[0];
+  $("outcome").textContent = S.outcome_text || (S.loading ? "load schedule running" : "Add load to start the schedule");
+  $("phase").textContent = `seed ${S.seed} · ${S.phase} · t ${S.t}s`;
+  $("kg").textContent = S.human_g == null ? "-" : S.human_g.toFixed(2);
+  $("ke").textContent = S.final_action ? S.final_action[1].toFixed(3) + (S.assist_changed ? " (assisted)" : "") : "-";
+  $("kl").textContent = (S.load_n ?? 0).toFixed(2); $("kd").textContent = S.disp_mm ?? "-";
+  const H = S.hist || [], t = H.map(r => r.t);
+  plot($("c1"), t, [[H.map(r => r.human_effort), "#60a5fa"], [H.map(r => r.assist_effort), "#f59e0b"], [H.map(r => r.final_effort), "#e6edf3"],
+                    [H.map(r => r.closure_meas * 0.6), "#22c55e"]], 0, 0.6);
+  plot($("c2"), t, [[H.map(r => r.normal_index), "#fb923c"], [H.map(r => r.normal_middle), "#a78bfa"], [H.map(r => r.load_n), "#94a3b8"]], 0, 30, S.threshold_n);
+  $("events").innerHTML = (S.events || []).slice().reverse().map(e => `${new Date(e.t_unix * 1000).toLocaleTimeString()} ${esc(e.event)} ${esc(e.message || e.to || e.termination || e.command || "")}`).join("<br>");
+  if (step <= 5 && !document.activeElement.matches("input")) panel();
+  setTimeout(poll, 100);
+}
+document.addEventListener("keydown", (e) => {
+  if (e.target.matches("input")) return;
+  const k = {ArrowUp: "g_up", ArrowDown: "g_down", o: "open", c: "close", l: "add_load", r: "reset", n: "next", " ": "record"}[e.key];
+  if (k) { cmd(k); e.preventDefault(); }
+  if (e.key === "m") cmd("mode", "MANUAL"); if (e.key === "a") cmd("mode", "ASSISTED - SCRIPTED"); if (e.key === "u") cmd("mode", "AUTONOMOUS - LEARNED");
+});
+steps(); panel(); poll();
+</script>
+</body>
+</html>

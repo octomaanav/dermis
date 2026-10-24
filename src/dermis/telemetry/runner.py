@@ -64,7 +64,7 @@ class TelemetryRunner:
             if self._rec_fh:
                 raise RuntimeError(f"already recording to {self.rec_path}")
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-            self._rec_fh = open(path, "a")
+            self._rec_fh = open(path, "a", buffering=1)      # line-buffered: survives an abrupt exit
             self.rec_path, self.rec_frames = path, 0
         return path
 

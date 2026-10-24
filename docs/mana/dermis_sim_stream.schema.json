@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dermis:sim_stream:1",
+  "title": "Dermis simulator-state stream, v1",
+  "description": "Messages from the Dermis simulator to an external viewer. One JSON object per WebSocket text message (or per line in a .jsonl recording). The first message of every connection or recording is a 'hello' carrying the static model; every following message is a 'frame' (one per control tick). Units: metres, radians, newtons, seconds. World frame: right-handed, +z up, +x forward. Quaternions are [x, y, z, w]. Everything is measured from the PyBullet simulator, except fields named *cmd* or under 'commands'.",
+  "oneOf": [{"$ref": "#/$defs/hello"}, {"$ref": "#/$defs/frame"}],
+  "$defs": {
+    "vec3": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+    "quat": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4,
+             "description": "[x, y, z, w], unit quaternion (PyBullet order)."},
+    "rgba": {"type": "array", "items": {"type": "number", "minimum": 0, "maximum": 1}, "minItems": 4, "maxItems": 4},
+    "source": {
+      "type": "object",
+      "required": ["label"],
+      "properties": {
+        "label": {"enum": ["SYNTHETIC", "REPLAY", "GLOVE", "TCP-UNVERIFIED", "SCRIPTED", "NO SOURCE"],
+                  "description": "Where the driving data came from. Show it prominently; SYNTHETIC and SCRIPTED are not glove data."},
+        "device_id": {"type": ["string", "null"]},
+        "telemetry_frame": {"type": ["integer", "null"], "description": "Device frame counter of the telemetry behind this tick."},
+        "telemetry_age_ms": {"type": ["number", "null"], "description": "Host age of that telemetry when the tick ran (host clock only; not end-to-end latency)."},
+        "note": {"type": "string"}
+      }
+    },
+    "visual": {
+      "type": "object",
+      "required": ["shape", "size", "pos", "quat", "rgba"],
+      "properties": {
+        "shape": {"enum": ["box", "sphere", "cylinder", "capsule"]},
+        "size": {"type": "object", "description": "box: full extents x/y/z; sphere: radius; cylinder: length + radius; capsule: length (straight segment between hemisphere centres) + radius. Cylinders and capsules lie along their local +z."},
+        "pos": {"$ref": "#/$defs/vec3", "description": "Relative to the link frame."},
+        "quat": {"$ref": "#/$defs/quat", "description": "Relative to the link frame."},
+        "rgba": {"$ref": "#/$defs/rgba"}
+      }
+    },
+    "hello": {
+      "type": "object",
+      "required": ["type", "schema", "model", "source", "rates"],
+      "properties": {
+        "type": {"const": "hello"},
+        "schema": {"const": "dermis.sim_stream/1"},
+        "source": {"$ref": "#/$defs/source"},
+        "rates": {"type": "object", "required": ["frames_hz"], "properties": {"frames_hz": {"type": "number", "exclusiveMinimum": 0}}},
+        "model": {
+          "type": "object",
+          "required": ["robot", "units", "frame", "links", "joints", "objects"],
+          "properties": {
+            "robot": {"type": "string"},
+            "units": {"type": "object"},
+            "frame": {"type": "object", "required": ["up", "forward", "handedness", "quaternion_order"]},
+            "links": {
+              "type": "array",
+              "description": "Index -1 is the base (palm + forearm). Draw each link's visuals at that link's world pose from the frame.",
+              "items": {
+                "type": "object",
+                "required": ["index", "name", "parent", "joint", "visuals"],
+                "properties": {
+                  "index": {"type": "integer", "minimum": -1},
+                  "name": {"type": "string"},
+                  "parent": {"type": ["integer", "null"]},
+                  "pod": {"type": "string"},
+                  "joint": {"type": ["object", "null"]},
+                  "visuals": {"type": "array", "items": {"$ref": "#/$defs/visual"}}
+                }
+              }
+            },
+            "joints": {
+              "type": "array",
+              "items": {"type": "object", "required": ["name", "link_index", "lower", "upper"],
+                        "properties": {"name": {"type": "string"}, "link_index": {"type": "integer"}, "pod": {"type": "string"},
+                                       "lower": {"type": "number"}, "upper": {"type": "number"}}}
+            },
+            "objects": {"type": "array", "items": {"type": "object", "required": ["name"],
+                        "properties": {"name": {"type": "string"}, "visuals": {"type": "array", "items": {"$ref": "#/$defs/visual"}}}}}
+          }
+        }
+      }
+    },
+    "frame": {
+      "type": "object",
+      "required": ["type", "schema", "seq", "tick", "t_sim_s", "source", "control", "stale", "base", "links", "joints", "commands", "objects", "contacts"],
+      "properties": {
+        "type": {"const": "frame"},
+        "schema": {"const": "dermis.sim_stream/1"},
+        "seq": {"type": "integer", "minimum": 0, "description": "Increases by 1 per frame on one connection; a gap means frames were dropped."},
+        "tick": {"type": "integer", "minimum": 0},
+        "t_sim_s": {"type": "number", "minimum": 0, "description": "Simulation time of this state. The timestamp to compare against simulator logs."},
+        "source": {"$ref": "#/$defs/source"},
+        "control": {"type": "object", "required": ["mode", "state"],
+                    "properties": {"mode": {"enum": ["DISARMED", "TELEOPERATION", "AUTONOMOUS", "SCRIPTED_TEST"]},
+                                   "state": {"type": "string"}, "reason": {"type": ["string", "null"]}}},
+        "stale": {"type": "boolean", "description": "True when the telemetry driving the robot is stale (watchdog). The pose is then deliberately held: frames keep arriving, nothing moves."},
+        "base": {"type": "object", "required": ["pos", "quat"], "properties": {"pos": {"$ref": "#/$defs/vec3"}, "quat": {"$ref": "#/$defs/quat"}}},
+        "links": {"type": "array", "items": {"type": "object", "required": ["index", "pos", "quat"],
+                  "properties": {"index": {"type": "integer", "minimum": 0}, "pos": {"$ref": "#/$defs/vec3"}, "quat": {"$ref": "#/$defs/quat"}}}},
+        "joints": {"type": "array", "items": {"type": "object", "required": ["name", "q", "q_cmd"],
+                   "properties": {"name": {"type": "string"}, "q": {"type": "number", "description": "measured, rad"},
+                                  "q_cmd": {"type": "number", "description": "commanded target, rad"}}}},
+        "commands": {"type": "object", "description": "Mapping outputs / test pattern that produced this tick (not measured)."},
+        "objects": {"type": "array", "items": {"type": "object", "required": ["name", "pos", "quat"],
+                    "properties": {"name": {"type": "string"}, "pos": {"$ref": "#/$defs/vec3"}, "quat": {"$ref": "#/$defs/quat"}}}},
+        "contacts": {"type": "array", "items": {"type": "object", "required": ["link_index", "object", "normal_force_n"],
+                     "properties": {"link_index": {"type": "integer"}, "object": {"type": "string"},
+                                    "normal_force_n": {"type": "number", "minimum": 0, "description": "Simulated contact force; not measured on a person."}}}},
+        "task": {"type": ["object", "null"], "properties": {"phase": {"type": ["string", "null"]}, "outcome": {"type": ["string", "null"]}}}
+      }
+    }
+  }
+}

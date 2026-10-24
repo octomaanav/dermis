@@ -3,218 +3,177 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dermis Dashboard</title>
-<style>
-:root {
-  --bg: #f6f7f9; --panel: #ffffff; --ink: #1d2330; --muted: #677085; --line: #e2e5eb;
-  --accent: #3a6fd8; --ok: #2e8b57; --warn: #c98a12; --bad: #c43d3d; --chip: #eef1f6;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #12151b; --panel: #1a1e26; --ink: #e6e9ef; --muted: #9aa3b5; --line: #2b313d;
-    --accent: #6d9bf2; --ok: #4fbf84; --warn: #e2a93b; --bad: #e66b6b; --chip: #242a35;
-  }
-}
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, sans-serif; }
-header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
-h1 { font-size: 16px; margin: 0 12px 0 0; }
-h2 { font-size: 14px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
-main { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; padding: 14px 16px; }
-section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; min-width: 0; }
-.wide { grid-column: 1 / -1; }
-.badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 11px; letter-spacing: .05em; background: var(--chip); }
-.SYNTHETIC { background: #7a4bc2; color: #fff; } .SCRIPTED { background: #5a6478; color: #fff; }
-.KEYBOARD { background: #2f7f9e; color: #fff; } .GLOVE { background: #2e8b57; color: #fff; }
-.REPLAY { background: #c98a12; color: #fff; } .AUTONOMOUS { background: #c43d3d; color: #fff; }
-.chip { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; background: var(--chip); margin-right: 4px; }
-.fresh { color: var(--ok); } .stale { color: var(--warn); font-weight: 600; } .invalid, .missing { color: var(--bad); font-weight: 600; }
-.muted { color: var(--muted); } .small { font-size: 12px; }
-button { font: inherit; padding: 5px 10px; border-radius: 5px; border: 1px solid var(--line); background: var(--chip); color: var(--ink); cursor: pointer; }
-button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-table { border-collapse: collapse; width: 100%; font-size: 12px; }
-th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-.scroll { overflow: auto; max-height: 320px; }
-.lane { display: grid; grid-template-columns: 110px 1fr; gap: 8px; align-items: center; margin-bottom: 6px; }
-canvas { width: 100%; height: 60px; display: block; background: var(--bg); border-radius: 4px; }
-canvas.tall { height: 150px; }
-tr.sel { background: var(--chip); } tr.click { cursor: pointer; }
-.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
-pre { font-size: 11px; background: var(--bg); padding: 6px; border-radius: 4px; overflow: auto; max-height: 160px; }
-@media (max-width: 520px) { main { grid-template-columns: 1fr; padding: 10px 16px; } .lane { grid-template-columns: 1fr; } }
-</style>
+<title>Dermis Console</title>
+<link rel="stylesheet" href="/static/console.css">
 </head>
 <body>
-<header>
-  <h1>Dermis</h1>
-  <span id="mode" class="badge">…</span>
-  <span id="src" class="badge">…</span>
-  <span id="srcstate" class="small muted"></span>
-  <span class="small muted" style="margin-left:auto">Simulation and telemetry tooling. No clinical claims; magnetic values are not force.</span>
+<header id="bar">
+  <div id="brand">DER<span>MIS</span></div>
+  <div class="seg" role="tablist"><button id="vPres" class="on">Presentation</button><button id="vEng">Engineering</button></div>
+  <span class="pill" title="Where the telemetry comes from. SYNTHETIC = generated development data; REPLAY = recorded data played back; GLOVE = live glove; SCRIPTED / KEYBOARD = non-glove demonstration sources.">
+    <span class="k">Source</span><span id="bSource" class="tag NONE">—</span></span>
+  <span class="pill" title="Who commands the robot. DISARMED: nothing moves. TELEOPERATION: telemetry drives the robot through the EXPERIMENTAL mapping. AUTONOMOUS: a policy or controller drives it; human motor input is ignored.">
+    <span class="k">Control</span><span id="bMode" class="tag DISARMED">—</span><span id="bModeDetail" class="small muted"></span></span>
+  <span class="pill" title="Telemetry connection state"><span id="bConnDot" class="dot"></span><span id="bConn">—</span></span>
+  <span class="pill mono small" title="Device ID / configuration ID of the newest accepted frame"><span class="k">Device</span><span id="bDev">—</span></span>
+  <span class="pill" title="Raw telemetry recording (and demonstration recording, in teleop)"><span id="bRec" class="muted">not recording</span></span>
+  <span class="pill" title="Calibration state (baseline captured unloaded and still)"><span id="bCal" class="muted">no calibration</span></span>
+  <span class="pill mono" title="Host time since the newest accepted frame / since the newest frame usable for control. Host clock only; not end-to-end latency (device and host clocks are not synchronized).">
+    <span class="k">Age</span><span id="bAge">—</span></span>
+  <span class="spacer"></span>
+  <span id="bLink" class="small dim">connecting…</span>
 </header>
+
 <main>
-  <section class="wide">
-    <h2>Live telemetry <span id="plotunit" class="muted small"></span></h2>
-    <div class="row">
-      <button id="rec" class="primary">Start recording</button>
-      <span id="recstate" class="small muted"></span>
-      <button id="cal">Capture unloaded baseline (200 frames)</button>
-      <span id="calstate" class="small muted"></span>
+<!-- ============================ PRESENTATION ============================ -->
+<section id="pres" class="view on">
+  <div class="grid top">
+    <div class="card robot">
+      <h2>Simulation <span id="simLabel" class="r small"></span></h2>
+      <img id="simImg" alt="Live PyBullet camera feed" style="display:none">
+      <canvas id="simSchem"></canvas>
+      <div id="simNote" class="note"></div>
     </div>
-    <div id="lanes"></div>
-    <div class="small muted" id="pipe"></div>
-    <pre id="events"></pre>
-  </section>
-
-  <section>
-    <h2>Episodes</h2>
-    <div class="row small"><label>Filter <input id="epfilter" placeholder="dataset / source / id"></label> <span id="epcount" class="muted"></span></div>
-    <div class="scroll"><table><thead><tr><th>Source</th><th>ID</th><th>Seed</th><th>Ticks</th><th>Outcome</th></tr></thead><tbody id="eps"></tbody></table></div>
-  </section>
-
-  <section>
-    <h2>Replay inspection <span id="replaylabel"></span></h2>
-    <div id="replaymeta" class="small muted">Select an episode.</div>
-    <canvas id="rp1" class="tall"></canvas>
-    <div class="small muted">object − gripper x / y / z (m)</div>
-    <canvas id="rp2" class="tall"></canvas>
-    <div class="small muted">issued opening (m×100), finger normal forces (N, simulated)</div>
-  </section>
-
-  <section>
-    <h2>Training runs</h2>
-    <div class="scroll"><table><thead><tr><th>Run</th><th>Status</th><th>Features</th><th>Demos</th><th>Best</th></tr></thead><tbody id="runs"></tbody></table></div>
-    <canvas id="loss" class="tall"></canvas>
-    <div class="small muted" id="losslabel">Select a run to see its loss curve (train solid, val dashed).</div>
-    <h2 style="margin-top:12px">Jobs</h2>
-    <div class="row small">
-      <button data-job='["collect","--source","scripted","--episodes","20","--out","data/episodes/scripted_dash"]'>Collect 20 scripted</button>
-      <button data-job='["smoke-test"]'>Run smoke test</button>
+    <div class="card">
+      <h2>Glove pods <span class="r small muted">click a pod to inspect it</span></h2>
+      <div id="handPres"></div>
+      <div class="legend"><span><i class="dot ok"></i>✓ healthy</span><span><i class="dot warn"></i>! degraded</span>
+        <span><i class="dot bad"></i>✕ invalid</span><span><i class="dot"></i>? missing</span></div>
     </div>
-    <div id="jobs" class="small"></div>
-  </section>
+  </div>
+  <div class="grid kpis" style="margin-top:var(--gap)">
+    <div class="card kpi"><div class="v" id="kFps">—</div><div class="l help" data-def="accepted_fps">Accepted frames / s</div><div class="s" id="kFpsS"></div></div>
+    <div class="card kpi"><div class="v" id="kUsable">—</div><div class="l help" data-def="usable_pct">Usable sensor channels</div><div class="s" id="kUsableS"></div></div>
+    <div class="card kpi"><div class="v" id="kAge">—</div><div class="l help" data-def="frame_age_ms">Newest frame age (host)</div><div class="s">host monotonic clock · not latency</div></div>
+    <div class="card kpi"><div class="v" id="kMissing">—</div><div class="l help" data-def="missing_ids">Missing frame IDs</div><div class="s" id="kMissingS">this connection · inferred from counter gaps</div></div>
+  </div>
+  <div class="grid top" style="margin-top:var(--gap)">
+    <div class="card">
+      <h2>Sensor timeline <span id="tlUnit" class="r small muted"></span></h2>
+      <div id="timeline"></div>
+    </div>
+    <div class="card">
+      <h2>Active mode</h2>
+      <div class="flowline" id="flow"></div>
+      <div id="modeExplain" style="margin-top:12px"></div>
+      <div style="margin-top:14px"><div class="small muted">Current state / outcome</div><div class="outcome" id="outcome">—</div><div id="outcomeS" class="small muted"></div></div>
+    </div>
+  </div>
+</section>
 
-  <section>
-    <h2>Evaluation</h2>
-    <div class="small muted">Results in simulation. The contact experiment uses simulated contact observations and says nothing about real glove data.</div>
-    <div id="comps"></div>
-    <div class="scroll"><table><thead><tr><th>Policy</th><th>Mode</th><th>Suite</th><th>Success</th><th>Drop eps</th><th>Excess-force eps</th><th>Peak N</th><th>Median s</th></tr></thead><tbody id="results"></tbody></table></div>
-  </section>
+<!-- ============================ ENGINEERING ============================ -->
+<section id="eng" class="view">
+  <div class="grid g2">
+    <div class="card">
+      <h2>Live ingestion <span class="r small muted" id="ingScope"></span></h2>
+      <div class="metrics" id="metrics"></div>
+      <div class="note" id="rejNote"></div>
+    </div>
+    <div class="card">
+      <h2>Pods <span class="r small muted">click to inspect</span></h2>
+      <div class="grid" style="grid-template-columns: minmax(0,0.75fr) minmax(0,1.25fr); gap:10px">
+        <div id="handEng"></div>
+        <div><div id="podTable"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:var(--gap)">
+    <h2>Sensor plots — <span id="plotPod" class="acc"></span>
+      <span class="r row small">
+        <label>Pod <select id="podSel"></select></label>
+        <label>Window <select id="winSel"><option value="5">5 s</option><option value="10" selected>10 s</option><option value="30">30 s</option></select></label>
+        <label title="Display-only exponential moving average (τ = 50 ms) on the samples shown; never used for control"><input type="checkbox" id="filt"> filtered overlay</label>
+        <button class="btn" id="pauseBtn">Pause display</button>
+      </span></h2>
+    <div class="note">Shared time cursor (hover any chart). Gaps = invalid / missing samples. Amber dots = STALE (valid but repeated) values.
+      TEMP_STALE alone does not invalidate magnetic readings. Magnetic data are in µT: a change from the unloaded baseline, not force.</div>
+    <div class="grid g2" id="plots"></div>
+  </div>
+
+  <div class="grid g2" style="margin-top:var(--gap)">
+    <div class="card">
+      <h2>Calibration &amp; signal quality</h2>
+      <div id="calInfo"></div>
+      <div class="row" style="margin-top:10px"><button class="btn primary" id="calBtn">Capture unloaded baseline</button></div>
+      <div class="result" id="calRes"></div>
+      <h2 style="margin-top:14px">Stream faults &amp; watchdog events</h2>
+      <canvas id="evStrip" style="width:100%;height:34px;background:var(--s2);border-radius:6px"></canvas>
+      <div class="events" id="events"></div>
+    </div>
+    <div class="card">
+      <h2>Raw frame inspector <span class="r small"><label><input type="checkbox" id="rawAuto" checked> auto-refresh (2 Hz)</label></span></h2>
+      <div class="row small"><button class="btn" id="rawRefresh">Snapshot now</button><button class="btn" id="rawCopy">Copy frame</button>
+        <select id="rawWhich"><option value="frame">full frame</option><option value="pod">selected pod only</option></select>
+        <label><input type="checkbox" id="rawDiff" checked> highlight changed fields</label></div>
+      <div id="rawMeta" class="small muted" style="margin:8px 0"></div>
+      <pre class="json" id="rawJson">—</pre>
+      <div class="small dim" style="margin-top:6px">Auto-refresh pauses while the pointer is over the JSON so it can be selected.</div>
+    </div>
+  </div>
+
+  <div class="grid g2" style="margin-top:var(--gap)">
+    <div class="card">
+      <h2>Recording</h2>
+      <div class="row"><input type="text" id="recTask" placeholder="task label (e.g. pinch test)" size="22">
+        <button class="btn primary" id="recBtn">Start raw telemetry recording</button></div>
+      <div class="row" style="margin-top:8px"><select id="recOutcome"><option value="">outcome…</option><option>ok</option><option>success</option><option>failed</option><option>aborted</option></select>
+        <span class="small muted">applied when you stop</span></div>
+      <div class="result" id="recRes"></div>
+      <div class="note">Raw telemetry = glove frames exactly as received. It is not a robot demonstration and is not ready for behavioral cloning by itself.</div>
+      <h2 style="margin-top:12px">Teleop demonstration (robot state + issued commands)</h2>
+      <div class="row"><button class="btn primary" id="demoBtn">Start demonstration</button><button class="btn" id="markBtn">Mark</button>
+        <input type="text" id="markText" placeholder="marker text" size="14"></div>
+      <div class="result" id="demoRes"></div>
+      <h2 style="margin-top:12px">Raw recordings</h2>
+      <div class="scroll" style="max-height:160px"><table><thead><tr><th>File</th><th>Task</th><th class="num">Frames</th><th class="num">s</th><th>Outcome</th></tr></thead><tbody id="recList"></tbody></table></div>
+    </div>
+    <div class="card">
+      <h2>Episodes <span class="r small"><input type="text" id="epFilter" placeholder="filter" size="12"> <span id="epCount" class="muted"></span></span></h2>
+      <div class="tabs" id="epTabs"></div>
+      <div class="scroll"><table><thead><tr><th>Source</th><th>Episode</th><th class="num">s</th><th>Outcome</th><th>BC</th></tr></thead><tbody id="epList"></tbody></table></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:var(--gap)">
+    <h2>Episode viewer <span id="epLabel" class="r small"></span></h2>
+    <div id="epMeta" class="small muted">Select an episode.</div>
+    <div class="grid g2" id="epPlots" style="margin-top:8px"></div>
+    <div id="epNotes" class="note" style="display:none"></div>
+  </div>
+
+  <div class="grid g2" style="margin-top:var(--gap)">
+    <div class="card">
+      <h2>Training</h2>
+      <div class="tabs" id="runTabs"></div>
+      <div class="scroll" style="max-height:220px"><table><thead><tr><th>Run</th><th>Status</th><th>Features</th><th class="num">Demos</th><th class="num">Train time</th></tr></thead><tbody id="runList"></tbody></table></div>
+      <div class="chart"><div class="cap"><b id="lossTitle">Loss</b><span class="val" id="lossVal"></span></div><canvas id="lossCv"></canvas></div>
+      <div id="runInfo" class="small muted"></div>
+      <div class="row" style="margin-top:8px"><button class="btn" id="infBtn" disabled>Measure inference time</button><span id="infRes" class="small"></span></div>
+      <h2 style="margin-top:12px">Jobs</h2>
+      <div class="row small"><button class="btn" data-job='["smoke-test"]'>Run smoke test</button>
+        <button class="btn" data-job='["collect","--source","scripted","--episodes","20","--out","data/episodes/scripted_dash"]'>Collect 20 scripted</button></div>
+      <div id="jobs" class="small"></div>
+    </div>
+    <div class="card">
+      <h2>Evaluation (AUTONOMOUS rollouts in simulation)</h2>
+      <div id="evalNotes"></div>
+      <div class="tabs" id="evalTabs"></div>
+      <div id="evalTable"></div>
+      <h2 style="margin-top:12px">Run-level variation (training seeds)</h2>
+      <div id="variation"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:var(--gap)" id="cupCard">
+    <h2>Fragile cup <span class="r small muted" id="cupKind"></span></h2>
+    <div id="cupLive"></div>
+  </div>
+  <div class="small dim" style="margin-top:16px">Source labels used throughout: SYNTHETIC · REPLAY · GLOVE · SCRIPTED · KEYBOARD · control mode AUTONOMOUS / TELEOPERATION / DISARMED.
+    Simulation results only; no clinical claims. Magnetic values are not force; contact forces are simulated.</div>
+</section>
 </main>
-<script>
-const $ = (id) => document.getElementById(id);
-const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-const api = async (p, opt) => (await fetch(p, opt)).json();
-const post = (p, body) => api(p, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})});
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
-const COLORS = ["#3a6fd8", "#d8783a", "#2e8b57", "#9b4bc2"];
-
-let since = 0, buf = [], pods = [], status = null;
-
-function line(canvas, series, opts = {}) {
-  const dpr = window.devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.clientHeight;
-  canvas.width = w * dpr; canvas.height = h * dpr;
-  const g = canvas.getContext("2d"); g.scale(dpr, dpr); g.clearRect(0, 0, w, h);
-  const vals = series.flatMap((s) => s.y.filter((v) => v !== null && isFinite(v)));
-  if (!vals.length) { g.fillStyle = css("--muted"); g.font = "11px system-ui"; g.fillText(opts.empty || "no usable samples", 8, h / 2); return; }
-  let lo = Math.min(...vals), hi = Math.max(...vals); if (hi - lo < 1e-9) { hi += 1; lo -= 1; }
-  const pad = 4, n = Math.max(...series.map((s) => s.y.length));
-  const X = (i) => pad + (w - 2 * pad) * (n <= 1 ? 0 : i / (n - 1)), Y = (v) => h - pad - (h - 2 * pad) * (v - lo) / (hi - lo);
-  if (opts.marks) opts.marks.forEach((m, i) => { if (m) { g.fillStyle = m === "stale" ? css("--warn") : css("--bad"); g.globalAlpha = .25; g.fillRect(X(i) - 1, 0, 3, h); g.globalAlpha = 1; } });
-  series.forEach((s, k) => {
-    g.strokeStyle = s.color || COLORS[k % 4]; g.lineWidth = 1.4; g.setLineDash(s.dash ? [4, 3] : []); g.beginPath();
-    let pen = false; s.y.forEach((v, i) => { if (v === null || !isFinite(v)) { pen = false; return; } pen ? g.lineTo(X(i), Y(v)) : g.moveTo(X(i), Y(v)); pen = true; });
-    g.stroke();
-  });
-  g.setLineDash([]); g.fillStyle = css("--muted"); g.font = "10px system-ui";
-  g.fillText(hi.toPrecision(4), 6, 11); g.fillText(lo.toPrecision(4), 6, h - 4);
-}
-
-async function pollStatus() {
-  status = await api("/api/status");
-  $("mode").textContent = status.mode;
-  $("src").textContent = status.source; $("src").className = "badge " + status.source;
-  $("srcstate").innerHTML = status.source_error ? `<span class="invalid">source error: ${esc(status.source_error)}</span>` :
-    status.source_finished ? "source finished" : status.source_stale ? '<span class="stale">no data (stale source)</span>' : '<span class="fresh">receiving</span>';
-  const r = status.recording;
-  $("rec").textContent = r.active ? "Stop recording" : "Start recording";
-  $("recstate").textContent = r.active ? `recording raw frames → ${r.path} (${r.frames})` : "";
-  const c = status.calibration;
-  $("calstate").innerHTML = status.capturing_baseline ? "capturing… keep the glove unloaded" : c ?
-    `calibration ${esc(c.id)} (config ${c.config_id}) ${c.valid_for_stream ? '<span class="fresh">valid for stream</span>' : '<span class="invalid">NOT valid for this device/config</span>'}` : "no calibration: showing |B| in µT";
-  $("plotunit").textContent = c && c.valid_for_stream ? "— change from unloaded baseline |ΔB| (µT); not force" : "— |B| (µT, raw magnitude); shaded = stale (amber) / invalid or missing (red)";
-  const p = status.pipeline;
-  $("pipe").textContent = `accepted ${p.accepted} / ${p.messages} messages · lost ${p.lost_frames} · duplicates ${p.duplicates} · out-of-order ${p.out_of_order} · config changes ${p.config_changes} · restarts ${p.restarts} · adapter errors ${p.adapter_errors} · config_id ${p.config_id} · device ${p.device_id}`;
-  $("events").textContent = status.recent_events.map((e) => JSON.stringify(e)).join("\n") || "no events";
-  if (JSON.stringify(pods) !== JSON.stringify(status.pods)) { pods = status.pods; buildLanes(); }
-}
-
-function buildLanes() {
-  $("lanes").innerHTML = pods.map((p, i) => `<div class="lane"><div><b>${esc(p)}</b><br><span id="st${i}" class="small"></span></div><canvas id="ln${i}"></canvas></div>`).join("");
-}
-
-async function pollTelemetry() {
-  const d = await api("/api/telemetry?since=" + since);
-  since = d.last; buf = buf.concat(d.rows).slice(-400);
-  pods.forEach((p, i) => {
-    const useDb = buf.some((r) => r.pods[i] && r.pods[i].db !== null);
-    const y = buf.map((r) => r.pods[i] ? (useDb ? r.pods[i].db : r.pods[i].b_norm) : null);
-    const marks = buf.map((r) => !r.pods[i] ? "invalid" : r.pods[i].mag === "fresh" ? null : r.pods[i].mag === "stale" ? "stale" : "invalid");
-    line($("ln" + i), [{y}], {marks});
-    const last = buf[buf.length - 1]?.pods[i];
-    if (last) $("st" + i).innerHTML = `mag <span class="${last.mag}">${last.mag.toUpperCase()}</span> · imu <span class="${last.imu}">${last.imu.toUpperCase()}</span>` +
-      (last.sat ? ' · <span class="invalid">RAIL</span>' : "") + (last.deform !== null ? ` · def ${last.deform.toFixed(2)}` : "") + (last.age_ms !== null ? ` · age ${last.age_ms} ms` : "");
-  });
-}
-
-let episodes = [];
-async function loadEpisodes() {
-  episodes = await api("/api/episodes"); renderEpisodes();
-}
-function renderEpisodes() {
-  const f = $("epfilter").value.toLowerCase();
-  const rows = episodes.filter((e) => !f || (e.dataset + e.source + e.id).toLowerCase().includes(f)).slice(-300).reverse();
-  $("epcount").textContent = `${rows.length} shown of ${episodes.length}`;
-  $("eps").innerHTML = rows.map((e) => `<tr class="click" data-path="${esc(e.path)}"><td><span class="badge ${esc(e.label)}">${esc(e.label)}</span></td><td>${esc(e.id)}</td><td>${e.seed ?? ""}</td><td>${e.length ?? ""}</td><td class="${e.success ? "fresh" : "invalid"}">${esc(e.termination)}</td></tr>`).join("");
-  document.querySelectorAll("#eps tr").forEach((tr) => tr.onclick = () => showEpisode(tr.dataset.path, tr));
-}
-async function showEpisode(path, tr) {
-  document.querySelectorAll("#eps tr").forEach((x) => x.classList.remove("sel")); tr.classList.add("sel");
-  const d = await api("/api/episode?path=" + encodeURIComponent(path));
-  const m = d.meta;
-  $("replaylabel").innerHTML = `<span class="badge REPLAY">REPLAY</span> <span class="badge ${esc(m.label)}">${esc(m.label)}</span>`;
-  $("replaymeta").textContent = `${m.id} · seed ${m.seed} · friction ${m.scenario.friction.toFixed(2)} · ${m.length} ticks @ ${(1 / m.dt).toFixed(0)} Hz · ${m.termination}` + (m.calibration_id ? ` · calibration ${m.calibration_id}` : "");
-  line($("rp1"), [{y: d.obs.obj_rel_x}, {y: d.obs.obj_rel_y}, {y: d.obs.obj_rel_z}]);
-  line($("rp2"), [{y: d.actions.opening.map((v) => v * 100)}, {y: d.force_l}, {y: d.force_r, dash: true}]);
-}
-
-let runs = [];
-async function loadRuns() {
-  runs = await api("/api/runs");
-  $("runs").innerHTML = runs.map((r, k) => `<tr class="click" data-k="${k}"><td>${esc(r.name)}</td><td>${esc(r.status.state)} ${r.status.epoch}/${r.status.epochs}</td><td>${esc((r.features || []).join("+"))}${r.history ? " h=" + r.history : ""}</td><td>${r.n_train}+${r.n_val} ${esc((r.provenance.sources || []).join(","))}</td><td>${r.status.best_score?.toFixed?.(5) ?? ""}</td></tr>`).join("");
-  document.querySelectorAll("#runs tr").forEach((tr) => tr.onclick = () => {
-    const r = runs[+tr.dataset.k];
-    line($("loss"), [{y: r.log.map((x) => x.train_mse)}, {y: r.log.map((x) => x.val_mse ?? null), dash: true}]);
-    $("losslabel").textContent = `${r.name}: MSE on actions scaled to [-1, 1] · ${r.log.length} epochs · data ${r.provenance.data_dir} (${r.provenance.data_digest})`;
-  });
-  const jobs = await api("/api/jobs");
-  $("jobs").innerHTML = jobs.map((j) => `<div><b>${esc(j.args.join(" "))}</b>: ${esc(j.state)}<pre>${esc(j.log_tail.join("\n"))}</pre></div>`).join("") || '<span class="muted">no jobs started from the dashboard</span>';
-}
-
-async function loadResults() {
-  const d = await api("/api/results");
-  $("comps").innerHTML = d.comparisons.map((c) => `<div class="small" style="margin:6px 0"><b>${esc(c.title)}</b> <span class="muted">${esc(c.path)}</span></div>`).join("");
-  $("results").innerHTML = d.results.map((r) => { const s = r.summary; return `<tr><td>${esc(r.policy.name || r.policy.kind)}</td><td><span class="badge ${esc(r.policy.label)}">${esc(r.policy.label)}</span></td><td>${esc(r.suite)}</td><td>${s.successes}/${s.attempts}</td><td>${s.episodes_with_drop}</td><td>${s.episodes_with_excess_force}</td><td>${s.peak_contact_force_n_max?.toFixed(1) ?? "–"}</td><td>${s.completion_time_s_median?.toFixed(2) ?? "–"}</td></tr>`; }).join("");
-}
-
-$("rec").onclick = async () => { status?.recording.active ? await post("/api/record/stop") : await post("/api/record/start"); pollStatus(); };
-$("cal").onclick = async () => { $("calstate").textContent = "capturing… keep the glove unloaded"; const r = await post("/api/calibration/capture", {frames: 200}); $("calstate").textContent = r.error || `saved ${r.calibration_id} (${r.source})`; };
-$("epfilter").oninput = renderEpisodes;
-document.querySelectorAll("button[data-job]").forEach((b) => b.onclick = async () => { await post("/api/jobs", {args: JSON.parse(b.dataset.job)}); loadRuns(); });
-
-pollStatus(); loadEpisodes(); loadRuns(); loadResults();
-setInterval(pollStatus, 1000); setInterval(pollTelemetry, 250); setInterval(loadRuns, 3000);
-setInterval(() => { loadEpisodes(); loadResults(); }, 15000);
-</script>
+<div id="toast"></div>
+<script src="/static/console.js"></script>
 </body>
 </html>

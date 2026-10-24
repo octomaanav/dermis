@@ -1,0 +1,12 @@
+# python -m dermis cup benchmark --config configs/cup/benchmark.yaml
+# SECONDARY arm: same protocol, demonstrator hybrid_expert (grip-load coupling + slip reflex).
+title: "fragile_cup (secondary): BC without vs with simulated contact, demonstrator hybrid_expert (uses contact)"
+out: runs/cup/benchmark_hybrid
+task: configs/cup/task.yaml
+collect: {episodes: 200, seed_start: 0, controller: hybrid_expert, noise: 1.0}
+suite: configs/cup/heldout.yaml
+reference_controllers: []
+train_seeds: [0, 1, 2]       # same episodes, split and scenarios; only the training seed differs
+policies:
+  - {name: cup_bc_no_contact, config: configs/cup/bc_no_contact.yaml}
+  - {name: cup_bc_contact, config: configs/cup/bc_contact.yaml}

@@ -1,0 +1,13 @@
+# fragile_cup BC, WITH simulated finger-object contact features. Identical otherwise.
+name: cup_bc_contact
+data: data/episodes/cup_scripted
+out: runs/cup/bc_contact
+feature_groups: [gripper, object, contact]
+history: 4                 # stacked observation frames (object position/velocity history); padded with obs[0]
+label: expert_actions      # clean scripted label; TEACH episodes fall back to issued actions
+success_only: false        # failed demonstrations kept; filter if desired
+val_fraction: 0.2
+split_seed: 0
+seed: 0
+model: {hidden: [128, 128], dropout: 0.0}
+train: {epochs: 40, batch_size: 256, lr: 0.001, weight_decay: 0.00001}

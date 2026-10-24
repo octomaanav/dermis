@@ -222,7 +222,13 @@ class SyntheticSource:
     label = "SYNTHETIC"
 
     def __init__(self, rate_hz: float = 100.0, faults=(), n_frames: int | None = None, realtime: bool = True,
-                 seed: int = 0, fault_period: int = 50, pods=tuple(BASELINE_UT), device_id: str = "synthetic-000000"):
+                 seed: int = 0, fault_period: int = 50, pods=tuple(BASELINE_UT), device_id: str = "synthetic-000000",
+                 profile: str = "periodic"):
+        """profile: "periodic" = continuous sin^2 fingertip presses (default); "step" = repeating
+        3 s unloaded / 3 s *held* press / 3 s released, for exercising two-point calibration."""
+        if profile not in ("periodic", "step"):
+            raise ValueError(f"unknown synthetic profile {profile!r}")
+        self.profile = profile
         bad = set(faults) - set(FAULTS)
         if bad:
             raise ValueError(f"unknown faults {sorted(bad)}; known: {FAULTS}")
@@ -238,7 +244,13 @@ class SyntheticSource:
         t = k / self.rate_hz
         pods = {}
         for i, loc in enumerate(self.pods):
-            press = max(0.0, math.sin(2 * math.pi * 0.25 * t - i * 0.6)) ** 2 if loc.endswith("_tip") else 0.0
+            if not loc.endswith("_tip"):
+                press = 0.0
+            elif self.profile == "step":
+                ph = t % 9.0
+                press = 0.0 if ph < 3.0 or ph >= 6.0 else min(1.0, (ph - 3.0) / 0.3)
+            else:
+                press = max(0.0, math.sin(2 * math.pi * 0.25 * t - i * 0.6)) ** 2
             b0 = np.array(BASELINE_UT.get(loc, (0.0, 0.0, 26000.0)))
             b = b0 + press * np.array([60.0, -40.0, 400.0]) + self.rng.normal(0, 2.5, 3)
             tilt = 0.4 * math.sin(2 * math.pi * 0.1 * t) if loc == "thenar_apb" else 0.0
@@ -299,20 +311,21 @@ class SyntheticSource:
 
     def __iter__(self) -> Iterator[RawMessage]:
         period = 1.0 / self.rate_hz
-        for fr in self.frames():
-            if self.realtime:
-                time.sleep(period)
+        t0 = time.monotonic()
+        for k, fr in enumerate(self.frames(), start=1):
+            if self.realtime:                            # deadline schedule: generation time does not accumulate
+                time.sleep(max(0.0, t0 + k * period - time.monotonic()))
             yield RawMessage(fr, time.monotonic_ns())
 
 
 def open_source(kind: str, path=None, rate=None, loop=False, host="127.0.0.1", port=8765, serial_port=None,
-                wire=False, faults="", realtime=True):
+                wire=False, faults="", realtime=True, profile="periodic"):
     if kind == "replay":
         if not path:
             raise SystemExit("--source replay needs --path")
         return ReplaySource(path, rate, loop, realtime)
     if kind == "synthetic":
-        return SyntheticSource(rate or 100.0, [f for f in faults.split(",") if f], realtime=realtime)
+        return SyntheticSource(rate or 100.0, [f for f in faults.split(",") if f], realtime=realtime, profile=profile)
     if kind == "stdin":
         return LineSource(sys.stdin)
     if kind == "tcp":

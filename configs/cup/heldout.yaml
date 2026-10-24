@@ -1,0 +1,4 @@
+# fragile_cup held-out suite: final reporting only, do not tune against it (seeds 2,000,000+)
+name: cup_heldout_v1
+generate: {seed_start: 2000000, count: 60}
+task_config: {damage_model: instant+sustained, break_force_n: 25.0, sustained_safe_n: 8.0, damage_budget_ns: 15.0}

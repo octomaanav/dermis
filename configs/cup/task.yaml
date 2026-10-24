@@ -1,0 +1,7 @@
+# fragile_cup benchmark task (v2). Units: m, s, N, kg. All other fields: CupConfig defaults (src/dermis/cup/env.py).
+# v1 used damage_model "instant" only; the task check showed a fixed 14 N grip solves every dev scenario,
+# so v2 adds a simulated sustained-squeeze limit (thin-walled cup crushing/creep proxy). Both are SIMULATED thresholds.
+damage_model: instant+sustained
+break_force_n: 25.0        # per-finger normal force: immediate simulated damage above this
+sustained_safe_n: 8.0      # per-finger normal tolerated indefinitely
+damage_budget_ns: 15.0     # integral of max(0, normal - safe) dt allowed, N*s

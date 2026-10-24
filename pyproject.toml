@@ -15,6 +15,7 @@ dependencies = [
     "pyyaml",
     "matplotlib",
     "jsonschema",
+    "bleak==1.1.0",
 ]
 
 [project.optional-dependencies]

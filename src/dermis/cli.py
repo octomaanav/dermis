@@ -301,6 +301,8 @@ def build_parser() -> argparse.ArgumentParser:
     from .server.teleop.session import add_args as _teleop_args, cmd_teleop
     from .server.dev_sender import add_args as _sender_args, cmd_send_test
     from .server.teleop.pipeline_check import add_args as _check_args, cmd_test_tcp_pipeline
+    from .server.websocket_bridge import (add_bridge_args as _bridge_args, add_mock_args as _mock_ws_args,
+                                          cmd_mock_ws_server, cmd_websocket_bridge)
     sp = sub.add_parser("teleop", help="TELEOP test: TCP glove telemetry -> simulated gripper (EXPERIMENTAL mapping)")
     _teleop_args(sp)
     sp.set_defaults(fn=cmd_teleop)
@@ -310,6 +312,19 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("test-tcp-pipeline", help="headless TCP -> simulator integration check")
     _check_args(sp)
     sp.set_defaults(fn=cmd_test_tcp_pipeline)
+    sp = sub.add_parser("websocket-bridge", help="subscribe to WebSocket frames and forward to the local TCP receiver")
+    _bridge_args(sp)
+    sp.set_defaults(fn=cmd_websocket_bridge)
+    sp = sub.add_parser("mock-ws-server", help="development WebSocket decoded-frame source")
+    _mock_ws_args(sp)
+    sp.set_defaults(fn=cmd_mock_ws_server)
+
+    from .cup.cli import add_parser as _add_cup
+    _add_cup(sub)
+    from .wipe.cli import add_parser as _add_wipe
+    _add_wipe(sub)
+    from .glove.cli import add_parser as _add_glove
+    _add_glove(sub)
 
     sp = sub.add_parser("dashboard", help="local web dashboard")
     add_source_args(sp)
@@ -318,6 +333,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--runs-root", default="runs")
     sp.add_argument("--results-root", default="results")
     sp.add_argument("--recordings", default="data/telemetry")
+    sp.add_argument("--cup-controller", default="", help="fragile_cup live panel: comma list of SCRIPTED controllers, e.g. grip_load_expert,fixed_14N")
+    sp.add_argument("--cup-checkpoint", action="append", default=[], help="fragile_cup live panel: trained checkpoint dir (repeatable)")
+    sp.add_argument("--cup-seed", type=int, default=4_000_000)
     sp.set_defaults(fn=cmd_dashboard)
     return ap
 

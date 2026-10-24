@@ -1,0 +1,13 @@
+# python -m dermis cup benchmark --config configs/cup/benchmark.yaml
+# PRIMARY arm. Demonstrator chosen on the dev suite before any held-out run: slip_reflex and hybrid_expert
+# tied (39/40, sustained model); the pre-declared tie-break picks the simpler slip_reflex.
+title: "fragile_cup (primary): BC without vs with simulated contact, demonstrator slip_reflex"
+out: runs/cup/benchmark
+task: configs/cup/task.yaml
+collect: {episodes: 200, seed_start: 0, controller: slip_reflex, noise: 1.0}
+suite: configs/cup/heldout.yaml
+reference_controllers: [fixed_8N, fixed_10N, fixed_14N, slip_reflex, hybrid_expert, grip_load_expert, oracle_privileged]
+train_seeds: [0, 1, 2]       # same episodes, split and scenarios; only the training seed differs
+policies:
+  - {name: cup_bc_no_contact, config: configs/cup/bc_no_contact.yaml}
+  - {name: cup_bc_contact, config: configs/cup/bc_contact.yaml}

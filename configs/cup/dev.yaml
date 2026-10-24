@@ -1,0 +1,4 @@
+# fragile_cup development suite (use while designing; seeds 1,000,000+)
+name: cup_dev_v1
+generate: {seed_start: 1000000, count: 40}
+task_config: {damage_model: instant+sustained, break_force_n: 25.0, sustained_safe_n: 8.0, damage_budget_ns: 15.0}

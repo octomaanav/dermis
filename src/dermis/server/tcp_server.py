@@ -82,6 +82,12 @@ class TelemetryServer:
         self.compat_notes: list[str] = []
         self.slot = LatestSlot()
         self.observers: list = []           # callables(snapshot), run on EVERY accepted frame in this thread
+        self.line_listeners: list = []      # callables(verdict, frame, t_recv_ns, processing_us, reason), every line
+        self.raw_keep_bytes = 65536
+        self.last_line: dict | None = None
+        self.last_accepted_line: dict | None = None
+        self.recording_started_ns: int | None = None
+        self.recording_frames = 0
         self._lock = threading.Lock()
         self._recv_times: deque = deque(maxlen=4096)
         self.counters = {k: 0 for k in ("bytes", "lines", "accepted", "malformed", "oversized", "schema_rejected",
@@ -112,6 +118,7 @@ class TelemetryServer:
             Path(self.record_path).parent.mkdir(parents=True, exist_ok=True)
             self._rec = open(self.record_path, "a", encoding="utf-8")
             self._rec_meta = open(str(self.record_path) + ".recv.jsonl", "a", encoding="utf-8")
+            self.recording_started_ns = time.monotonic_ns()
         self._thread = threading.Thread(target=self._run, name="dermis-tcp", daemon=True)
         self._thread.start()
         if not self._ready.wait(timeout):
@@ -217,19 +224,41 @@ class TelemetryServer:
 
     def _on_item(self, item) -> None:
         t_recv_ns = time.monotonic_ns()
-        if isinstance(item, Oversized):
-            self._reject("oversized", f"message of >= {item.size} bytes exceeds {self.max_message_bytes}")
+        t0 = time.perf_counter()
+        verdict, frame_no, why, data = self._process(item, t_recv_ns)
+        if verdict is None:
             return
+        proc_us = (time.perf_counter() - t0) * 1e6
+        with self._lock:
+            self.last_line = {"text": data[: self.raw_keep_bytes].decode("utf-8", "replace") if data else None,
+                              "truncated": bool(data) and len(data) > self.raw_keep_bytes,
+                              "verdict": verdict, "reason": why, "frame": frame_no, "t_recv_ns": t_recv_ns,
+                              "processing_us": round(proc_us, 1), "epoch": self.connection_epoch}
+            if verdict == "accepted":
+                self.last_accepted_line = self.last_line
+        for cb in self.line_listeners:
+            try:
+                cb(verdict, frame_no, t_recv_ns, proc_us, why)
+            except Exception as e:
+                self.last_error = f"line listener error: {e!r}"
+
+    def _process(self, item, t_recv_ns: int):
+        """-> (verdict, frame number or None, reason or None, raw bytes or None); verdict None = ignored."""
+        if isinstance(item, Oversized):
+            why = f"message of >= {item.size} bytes exceeds {self.max_message_bytes}"
+            self._reject("oversized", why)
+            return "oversized", None, why, None
         assert isinstance(item, Line)
         if not item.data.strip():
-            return                                          # blank keep-alive lines are allowed
+            return None, None, None, None                   # blank keep-alive lines are allowed
         with self._lock:
             self.counters["lines"] += 1
         try:
             obj, non_finite = parse_line(item.data)
         except MessageError as e:
             self._reject("malformed", str(e))
-            return
+            return "malformed", None, str(e), item.data
+        frame_no = obj.get("frame") if isinstance(obj.get("frame"), int) else None
         if non_finite:
             with self._lock:
                 self.counters["non_finite_messages"] += 1
@@ -243,8 +272,9 @@ class TelemetryServer:
                     self.log("[tcp] frame is not v1-shaped; normalizing (compat.py): " + "; ".join(notes[:6]))
         errs = schema_errors(obj)
         if errs:
-            self._reject("schema_rejected", "; ".join(errs))
-            return
+            why = "; ".join(errs)
+            self._reject("schema_rejected", why)
+            return "schema_rejected", frame_no, why, item.data
         label = self._label(obj)
         p = self.pipeline
         before = dict(p.counters)
@@ -252,12 +282,16 @@ class TelemetryServer:
         self._record(item.data, t_recv_ns, snap is not None)
         if snap is None:
             if p.counters["duplicates"] > before["duplicates"]:
-                self._reject("duplicates", f"duplicate frame {obj.get('frame')}", quiet=True)
-            elif p.counters["out_of_order"] > before["out_of_order"]:
-                self._reject("out_of_order", f"late frame {obj.get('frame')}", quiet=True)
-            else:
-                self._reject("adapter_rejected", str(p.events[-1].get("error")) if p.events else "adapter error")
-            return
+                why = f"duplicate frame {frame_no}"
+                self._reject("duplicates", why, quiet=True)
+                return "duplicate", frame_no, why, item.data
+            if p.counters["out_of_order"] > before["out_of_order"]:
+                why = f"late frame {frame_no}"
+                self._reject("out_of_order", why, quiet=True)
+                return "out_of_order", frame_no, why, item.data
+            why = str(p.events[-1].get("error")) if p.events else "adapter error"
+            self._reject("adapter_rejected", why)
+            return "adapter_rejected", frame_no, why, item.data
         with self._lock:
             self.counters["accepted"] += 1
             self.last_accept_ns = t_recv_ns
@@ -268,6 +302,7 @@ class TelemetryServer:
                 cb(snap)
             except Exception as e:                       # an observer bug must not stop ingestion
                 self._reject("adapter_rejected", f"observer error: {e!r}", quiet=True)
+        return "accepted", frame_no, ("non-finite values present" if non_finite else None), item.data
 
     def _label(self, obj: dict) -> str:
         if self.source_label:
@@ -284,10 +319,34 @@ class TelemetryServer:
         if not quiet and self.counters[counter] <= 5:
             self.log(f"[tcp] {counter}: {why[:200]}")
 
+    def start_recording(self, path: str) -> str:
+        """Begin raw telemetry recording (schema-valid lines exactly as received). Any thread."""
+        with self._lock:
+            if self._rec is not None:
+                raise RuntimeError(f"already recording to {self.record_path}")
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            self._rec = open(path, "a", encoding="utf-8")
+            self._rec_meta = open(str(path) + ".recv.jsonl", "a", encoding="utf-8")
+            self.record_path, self.recording_started_ns, self.recording_frames = str(path), time.monotonic_ns(), 0
+        return str(path)
+
+    def stop_recording(self) -> dict:
+        with self._lock:
+            out = {"path": self.record_path, "frames": self.recording_frames,
+                   "duration_s": None if self.recording_started_ns is None
+                   else round((time.monotonic_ns() - self.recording_started_ns) / 1e9, 2)}
+            for fh in (self._rec, self._rec_meta):
+                if fh:
+                    fh.close()
+            self._rec = self._rec_meta = None
+            self.record_path, self.recording_started_ns = None, None
+        return out
+
     def _record(self, data: bytes, t_recv_ns: int, accepted: bool) -> None:
         """Raw schema-valid lines exactly as received (replayable), plus a host-receive sidecar."""
         if self._rec is None:
             return
+        self.recording_frames += 1
         self._rec.write(data.decode("utf-8") + "\n")
         self._rec_meta.write(json.dumps({"t_recv_ns": t_recv_ns, "accepted": accepted,
                                          "epoch": self.connection_epoch}) + "\n")

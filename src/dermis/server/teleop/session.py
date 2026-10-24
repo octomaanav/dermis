@@ -255,6 +255,11 @@ def add_args(sp) -> None:
     sp.add_argument("--calibration", help="load a saved teleop calibration JSON (still checked against the stream)")
     sp.add_argument("--calib-dir", default="runs/teleop")
     sp.add_argument("--duration", type=float, help="stop after this many seconds")
+    sp.add_argument("--dashboard-port", type=int, default=None,
+                    help="also serve the Dermis console on http://127.0.0.1:PORT (live stream, controls, sim feed)")
+    sp.add_argument("--dashboard-feed-hz", type=float, default=0.0,
+                    help="console camera feed (GUI only, GPU render on the sim thread, ~36 ms per frame "
+                         "at 320x200 measured on an M2: costs control ticks; default off)")
     sp.add_argument("--auto", action="store_true",
                     help="development convenience: calibrate and arm automatically (also after reconnects); "
                          "X still disarms and pauses auto until R")
@@ -296,6 +301,15 @@ def cmd_teleop(a) -> int:
     stop = threading.Event()
     if sys.stdin and sys.stdin.isatty():
         threading.Thread(target=_stdin_reader, args=(sess.commands, stop), daemon=True).start()
+    console = None
+    if getattr(a, "dashboard_port", None):
+        from ...dashboard.server import serve_teleop
+        try:
+            srv, console = serve_teleop(sess, a.dashboard_port, a.dashboard_feed_hz)
+            log(f"[teleop] console on http://127.0.0.1:{srv.server_address[1]}  "
+                f"(feed {a.dashboard_feed_hz:g} Hz, control {a.control_hz} Hz)")
+        except OSError as e:
+            log(f"[teleop] console not started: {e} (try another --dashboard-port)")
     period = 1.0 / a.control_hz
     t_start = time.monotonic()
     next_t = t_start
@@ -305,7 +319,10 @@ def cmd_teleop(a) -> int:
             z, quit_ = (sess.keyboard() if sess.gui else (0.0, False))
             if quit_ or sess.quit or (a.duration and time.monotonic() - t_start > a.duration):
                 break
-            sess.step(z)
+            t_tick = time.perf_counter()
+            row = sess.step(z)
+            if console is not None:
+                console.provider.service(row, (time.perf_counter() - t_tick) * 1000)
             now = time.monotonic()
             if sess.gui:
                 sess.draw_status()

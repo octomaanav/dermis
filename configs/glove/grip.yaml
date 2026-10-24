@@ -1,0 +1,19 @@
+# EXPERIMENTAL glove grip mapping (src/dermis/glove/grip.py). Edit after the first real session.
+# Magnetic change -> unitless closure (0 = unloaded reference, 1 = comfortable-press reference) -> grip output.
+required_pods: [index_tip, thumb_tip]   # unusable -> grip PAUSED (output held)
+optional_pods: [middle_tip]             # used when usable; missing/invalid never pauses control
+axis: auto              # auto = calibrated unloaded->press direction | x | y | z (one chip axis) | norm
+sign: 1.0
+gain: 1.0
+deadband: 0.05          # closure units
+filter_tau_s: 0.08      # exponential smoothing of closure
+spike_ut: 4000.0        # reject a sample jumping more than this from the last accepted one
+out_min: 2.0            # fragile_cup grip effort limits, N (simulated robot command)
+out_max: 20.0
+max_rate: 40.0          # output slew limit, units/s
+combine: mean           # mean | max over usable pods
+min_separation: 5.0     # calibration rejected unless |press - unloaded| >= 5 x stationary std (every required pod)
+max_reference_std_ut: 60.0
+min_reference_samples: 20
+watchdog_s: 0.25        # no accepted frame -> PAUSED
+disarm_after_s: 2.0     # still nothing -> DISARMED (re-arm required)
