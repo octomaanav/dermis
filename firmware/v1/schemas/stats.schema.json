@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dermis:wire:1.0:stats",
+  "title": "Dermis STATS (wire schema v1.0)",
+  "description": "Payload of message 0x02, sent once per second while streaming. Counters are cumulative since boot. Unknown keys must be ignored.",
+  "type": "object",
+  "required": [
+    "uptime_ms",
+    "frames_produced",
+    "frames_sent",
+    "tx_dropped",
+    "rate_hz"
+  ],
+  "properties": {
+    "uptime_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "frames_produced": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "frames_sent": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tx_dropped": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Frames produced but not sent because the USB buffer was full."
+    },
+    "rate_hz": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Frames produced over the last second."
+    },
+    "acq_us_max": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Longest trigger-to-last-read time over the last second."
+    },
+    "period_us_max": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Longest time between two triggers over the last second."
+    },
+    "mag_err": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "description": "Invalid mag records per channel since boot."
+    },
+    "imu_err": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "rx_bad_packets": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Host commands rejected (COBS, CRC, length or version)."
+    },
+    "heap_free": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "usb_tx_free_min": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Lowest free space seen in the USB TX buffer over the last second."
+    },
+    "chip_temp_c": {
+      "type": "number"
+    }
+  }
+}

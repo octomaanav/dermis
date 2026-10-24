@@ -1,0 +1,7 @@
+.pio/
+.venv/
+__pycache__/
+*.py[cod]
+*.csv
+*.jitter.png
+*.pth

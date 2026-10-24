@@ -1,0 +1,259 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dermis:wire:1.0:decoded_frame",
+  "title": "Dermis decoded frame (host-side form)",
+  "description": "What host software works with after decoding a FRAME with its DEVICE_INFO: SI units, chip axes, invalid values as null. Not sent on the wire; use it for internal APIs, WebSocket streams and logs.",
+  "type": "object",
+  "required": [
+    "device_id",
+    "frame",
+    "t_device_us",
+    "t_host_ns",
+    "config_id",
+    "flags",
+    "pods"
+  ],
+  "properties": {
+    "device_id": {
+      "type": "string"
+    },
+    "frame": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "frame_counter"
+    },
+    "t_device_us": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Trigger time on the device clock."
+    },
+    "t_host_ns": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Trigger time mapped to the host clock, null until clock sync has a fit."
+    },
+    "config_id": {
+      "type": "integer"
+    },
+    "flags": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "CONFIG_CHANGED",
+          "OVERRUN",
+          "TX_DROP",
+          "MARKER"
+        ]
+      }
+    },
+    "pods": {
+      "type": "object",
+      "description": "Keyed by pod location; channels without a pod appear as magN / imuN.",
+      "propertyNames": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/location"
+          },
+          {
+            "pattern": "^(mag|imu)[0-9]+$"
+          }
+        ]
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/pod"
+      }
+    }
+  },
+  "$defs": {
+    "location": {
+      "enum": [
+        "thumb_tip",
+        "index_tip",
+        "middle_tip",
+        "ring_tip",
+        "little_tip",
+        "thenar_apb",
+        "hypothenar",
+        "palm_center",
+        "hand_dorsum",
+        "wrist",
+        "bench",
+        "unassigned"
+      ]
+    },
+    "vec3": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "pod": {
+      "type": "object",
+      "required": [
+        "pod_id",
+        "mag",
+        "imu"
+      ],
+      "properties": {
+        "pod_id": {
+          "type": "string"
+        },
+        "mag": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/mag"
+            }
+          ]
+        },
+        "imu": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/imu"
+            }
+          ]
+        }
+      }
+    },
+    "mag": {
+      "type": "object",
+      "required": [
+        "ch",
+        "b_ut",
+        "temp_c",
+        "t_us",
+        "status",
+        "flags",
+        "valid"
+      ],
+      "properties": {
+        "ch": {
+          "type": "integer"
+        },
+        "b_ut": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/vec3"
+            }
+          ],
+          "description": "Field in microtesla, chip axes."
+        },
+        "temp_c": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "t_us": {
+          "type": "integer",
+          "description": "Sample time (middle of the conversion window), device clock."
+        },
+        "status": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "flags": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "STALE",
+              "BAD_LENGTH",
+              "CHIP_ERROR",
+              "RAIL",
+              "COMM_FAIL",
+              "TEMP_STALE",
+              "RECOVERED"
+            ]
+          }
+        },
+        "valid": {
+          "type": "boolean"
+        }
+      }
+    },
+    "imu": {
+      "type": "object",
+      "required": [
+        "ch",
+        "acc_mps2",
+        "gyr_rads",
+        "temp_c",
+        "t_us",
+        "sensortime",
+        "flags",
+        "valid"
+      ],
+      "properties": {
+        "ch": {
+          "type": "integer"
+        },
+        "acc_mps2": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/vec3"
+            }
+          ],
+          "description": "Specific force in m/s^2, chip axes (reads +g on the axis pointing up)."
+        },
+        "gyr_rads": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/vec3"
+            }
+          ],
+          "description": "Angular rate in rad/s, chip axes."
+        },
+        "temp_c": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "t_us": {
+          "type": "integer",
+          "description": "When the data registers were read, device clock."
+        },
+        "sensortime": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16777215
+        },
+        "flags": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "STALE",
+              "COMM_FAIL",
+              "ACC_RAIL",
+              "GYR_RAIL",
+              "TEMP_STALE",
+              "RECOVERED"
+            ]
+          }
+        },
+        "valid": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "uptime_ms": 754312,
+  "frames_produced": 241023,
+  "frames_sent": 241021,
+  "tx_dropped": 2,
+  "rate_hz": 349.6,
+  "acq_us_max": 1712,
+  "period_us_max": 2951,
+  "mag_err": [
+    0,
+    0,
+    0,
+    1
+  ],
+  "imu_err": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "rx_bad_packets": 0,
+  "heap_free": 245120,
+  "usb_tx_free_min": 1840,
+  "chip_temp_c": 41.5
+}

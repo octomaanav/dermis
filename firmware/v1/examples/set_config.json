@@ -1,0 +1,41 @@
+{
+  "pods": [
+    {
+      "id": "P-0001",
+      "location": "index_tip",
+      "mag_ch": 0,
+      "imu_ch": 0
+    },
+    {
+      "id": "P-0002",
+      "location": "thumb_tip",
+      "mag_ch": 1,
+      "imu_ch": 1
+    },
+    {
+      "id": "P-0003",
+      "location": "middle_tip",
+      "mag_ch": 2,
+      "imu_ch": 2
+    },
+    {
+      "id": "P-0004",
+      "location": "thenar_apb",
+      "mag_ch": 3,
+      "imu_ch": 3
+    }
+  ],
+  "mag": [
+    {
+      "ch": 1,
+      "mount": "-Y+X+Z"
+    }
+  ],
+  "imu": [
+    {
+      "ch": 1,
+      "mount": "-Y+X+Z",
+      "acc_range_g": 16
+    }
+  ]
+}

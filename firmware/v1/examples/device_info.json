@@ -1,0 +1,240 @@
+{
+  "proto": "1.0",
+  "fw": "0.4.0",
+  "board": "esp32-s3",
+  "device_id": "dermis-3c84279f2a10",
+  "role": "glove",
+  "hand": "right",
+  "config_id": 3,
+  "rate_hz": 0,
+  "clock": {
+    "source": "esp_timer",
+    "unit": "us"
+  },
+  "pods": [
+    {
+      "id": "P-0001",
+      "location": "index_tip",
+      "mag_ch": 0,
+      "imu_ch": 0
+    },
+    {
+      "id": "P-0002",
+      "location": "thumb_tip",
+      "mag_ch": 1,
+      "imu_ch": 1
+    },
+    {
+      "id": "P-0003",
+      "location": "middle_tip",
+      "mag_ch": 2,
+      "imu_ch": 2
+    },
+    {
+      "id": "P-0004",
+      "location": "thenar_apb",
+      "mag_ch": 3,
+      "imu_ch": 3
+    }
+  ],
+  "mag": [
+    {
+      "ch": 0,
+      "part": "MLX90393",
+      "bus": "spi",
+      "cs_gpio": 21,
+      "addr": null,
+      "gain_sel": 1,
+      "hallconf": 12,
+      "res_xyz": [
+        2,
+        2,
+        2
+      ],
+      "osr": 0,
+      "osr2": 0,
+      "dig_filt": 2,
+      "tcmp_en": false,
+      "scale_ut_per_lsb": [
+        2.403,
+        2.403,
+        3.872
+      ],
+      "rail_lsb": [
+        22000,
+        22000,
+        22000
+      ],
+      "tref": 46244,
+      "temp_lsb_per_c": 45.2,
+      "conv_time_us": 1344,
+      "mount": "+X+Y+Z"
+    },
+    {
+      "ch": 1,
+      "part": "MLX90393",
+      "bus": "spi",
+      "cs_gpio": 4,
+      "addr": null,
+      "gain_sel": 1,
+      "hallconf": 12,
+      "res_xyz": [
+        2,
+        2,
+        2
+      ],
+      "osr": 0,
+      "osr2": 0,
+      "dig_filt": 2,
+      "tcmp_en": false,
+      "scale_ut_per_lsb": [
+        2.403,
+        2.403,
+        3.872
+      ],
+      "rail_lsb": [
+        22000,
+        22000,
+        22000
+      ],
+      "tref": 46244,
+      "temp_lsb_per_c": 45.2,
+      "conv_time_us": 1344,
+      "mount": "+X+Y+Z"
+    },
+    {
+      "ch": 2,
+      "part": "MLX90393",
+      "bus": "spi",
+      "cs_gpio": 16,
+      "addr": null,
+      "gain_sel": 1,
+      "hallconf": 12,
+      "res_xyz": [
+        2,
+        2,
+        2
+      ],
+      "osr": 0,
+      "osr2": 0,
+      "dig_filt": 2,
+      "tcmp_en": false,
+      "scale_ut_per_lsb": [
+        2.403,
+        2.403,
+        3.872
+      ],
+      "rail_lsb": [
+        22000,
+        22000,
+        22000
+      ],
+      "tref": 46244,
+      "temp_lsb_per_c": 45.2,
+      "conv_time_us": 1344,
+      "mount": "+X+Y+Z"
+    },
+    {
+      "ch": 3,
+      "part": "MLX90393",
+      "bus": "spi",
+      "cs_gpio": 17,
+      "addr": null,
+      "gain_sel": 1,
+      "hallconf": 12,
+      "res_xyz": [
+        2,
+        2,
+        2
+      ],
+      "osr": 0,
+      "osr2": 0,
+      "dig_filt": 2,
+      "tcmp_en": false,
+      "scale_ut_per_lsb": [
+        2.403,
+        2.403,
+        3.872
+      ],
+      "rail_lsb": [
+        22000,
+        22000,
+        22000
+      ],
+      "tref": 46244,
+      "temp_lsb_per_c": 45.2,
+      "conv_time_us": 1344,
+      "mount": "+X+Y+Z"
+    }
+  ],
+  "imu": [
+    {
+      "ch": 0,
+      "part": "BMI160",
+      "bus": "i2c0",
+      "cs_gpio": null,
+      "addr": 104,
+      "acc_range_g": 8,
+      "acc_odr_hz": 800,
+      "gyr_range_dps": 2000,
+      "gyr_odr_hz": 800,
+      "acc_scale_mps2_per_lsb": 0.0023942017,
+      "gyr_scale_rads_per_lsb": 0.0010642252,
+      "temp_offset_c": 23.0,
+      "temp_c_per_lsb": 0.001953125,
+      "sensortime_us_per_tick": 39.0625,
+      "mount": "+X+Y+Z"
+    },
+    {
+      "ch": 1,
+      "part": "BMI160",
+      "bus": "i2c0",
+      "cs_gpio": null,
+      "addr": 105,
+      "acc_range_g": 8,
+      "acc_odr_hz": 800,
+      "gyr_range_dps": 2000,
+      "gyr_odr_hz": 800,
+      "acc_scale_mps2_per_lsb": 0.0023942017,
+      "gyr_scale_rads_per_lsb": 0.0010642252,
+      "temp_offset_c": 23.0,
+      "temp_c_per_lsb": 0.001953125,
+      "sensortime_us_per_tick": 39.0625,
+      "mount": "+X+Y+Z"
+    },
+    {
+      "ch": 2,
+      "part": "BMI160",
+      "bus": "i2c1",
+      "cs_gpio": null,
+      "addr": 104,
+      "acc_range_g": 8,
+      "acc_odr_hz": 800,
+      "gyr_range_dps": 2000,
+      "gyr_odr_hz": 800,
+      "acc_scale_mps2_per_lsb": 0.0023942017,
+      "gyr_scale_rads_per_lsb": 0.0010642252,
+      "temp_offset_c": 23.0,
+      "temp_c_per_lsb": 0.001953125,
+      "sensortime_us_per_tick": 39.0625,
+      "mount": "+X+Y+Z"
+    },
+    {
+      "ch": 3,
+      "part": "BMI160",
+      "bus": "i2c1",
+      "cs_gpio": null,
+      "addr": 105,
+      "acc_range_g": 8,
+      "acc_odr_hz": 800,
+      "gyr_range_dps": 2000,
+      "gyr_odr_hz": 800,
+      "acc_scale_mps2_per_lsb": 0.0023942017,
+      "gyr_scale_rads_per_lsb": 0.0010642252,
+      "temp_offset_c": 23.0,
+      "temp_c_per_lsb": 0.001953125,
+      "sensortime_us_per_tick": 39.0625,
+      "mount": "+X+Y+Z"
+    }
+  ]
+}

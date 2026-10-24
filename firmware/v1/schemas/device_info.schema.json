@@ -1,0 +1,385 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dermis:wire:1.0:device_info",
+  "title": "Dermis DEVICE_INFO (wire schema v1.0)",
+  "description": "Payload of message 0x01. Describes the hub, its pods and every sensor channel, including the scale factors needed to turn FRAME counts into SI units. Unknown keys must be ignored (later minor versions add keys).",
+  "type": "object",
+  "required": [
+    "proto",
+    "fw",
+    "board",
+    "device_id",
+    "role",
+    "hand",
+    "config_id",
+    "rate_hz",
+    "clock",
+    "pods",
+    "mag",
+    "imu"
+  ],
+  "properties": {
+    "proto": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+$",
+      "description": "Schema version the firmware implements."
+    },
+    "fw": {
+      "type": "string",
+      "maxLength": 32
+    },
+    "build": {
+      "type": "string",
+      "description": "Optional build timestamp or git hash."
+    },
+    "board": {
+      "type": "string",
+      "examples": [
+        "esp32-s3"
+      ]
+    },
+    "device_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{4,40}$",
+      "description": "Stable per hub, e.g. derived from the eFuse MAC."
+    },
+    "role": {
+      "enum": [
+        "glove",
+        "robot",
+        "bench"
+      ]
+    },
+    "hand": {
+      "enum": [
+        "left",
+        "right",
+        "none"
+      ]
+    },
+    "config_id": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535,
+      "description": "Increments on every applied SET_CONFIG; persists across reboots. Every FRAME carries it."
+    },
+    "rate_hz": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 2000,
+      "description": "Target frame rate; 0 = as fast as the sensors allow."
+    },
+    "clock": {
+      "type": "object",
+      "required": [
+        "source",
+        "unit"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "examples": [
+            "esp_timer"
+          ]
+        },
+        "unit": {
+          "const": "us"
+        }
+      }
+    },
+    "pods": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/pod"
+      }
+    },
+    "mag": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/mag"
+      }
+    },
+    "imu": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/imu"
+      }
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "$defs": {
+    "location": {
+      "enum": [
+        "thumb_tip",
+        "index_tip",
+        "middle_tip",
+        "ring_tip",
+        "little_tip",
+        "thenar_apb",
+        "hypothenar",
+        "palm_center",
+        "hand_dorsum",
+        "wrist",
+        "bench",
+        "unassigned"
+      ]
+    },
+    "mount": {
+      "type": "string",
+      "pattern": "^(?=.*X)(?=.*Y)(?=.*Z)[+-][XYZ][+-][XYZ][+-][XYZ]$",
+      "description": "Which signed chip axis points along the pod's distal, lateral and normal axes, in that order, e.g. \"+X+Y+Z\" or \"-Y+X+Z\". Must describe a rotation (no reflection)."
+    },
+    "vec3": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "pod": {
+      "type": "object",
+      "required": [
+        "id",
+        "location",
+        "mag_ch",
+        "imu_ch"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "Physical pod serial, \"\" if not assigned yet."
+        },
+        "location": {
+          "$ref": "#/$defs/location"
+        },
+        "mag_ch": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 31
+        },
+        "imu_ch": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 15
+        }
+      }
+    },
+    "mag": {
+      "type": "object",
+      "required": [
+        "ch",
+        "part",
+        "scale_ut_per_lsb",
+        "rail_lsb",
+        "tref",
+        "temp_lsb_per_c",
+        "conv_time_us",
+        "mount"
+      ],
+      "properties": {
+        "ch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 31
+        },
+        "part": {
+          "type": "string",
+          "examples": [
+            "MLX90393"
+          ]
+        },
+        "bus": {
+          "type": "string"
+        },
+        "cs_gpio": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "addr": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "gain_sel": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        },
+        "hallconf": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 15
+        },
+        "res_xyz": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "osr": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "osr2": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "dig_filt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        },
+        "tcmp_en": {
+          "type": "boolean"
+        },
+        "scale_ut_per_lsb": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/vec3"
+            },
+            {
+              "items": {
+                "exclusiveMinimum": 0
+              }
+            }
+          ]
+        },
+        "rail_lsb": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 32767
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "tref": {
+          "type": "integer",
+          "description": "Temperature reading at 25 C (typical 46244)."
+        },
+        "temp_lsb_per_c": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "conv_time_us": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Conversion window after the trigger; the sample time is its midpoint."
+        },
+        "mount": {
+          "$ref": "#/$defs/mount"
+        }
+      }
+    },
+    "imu": {
+      "type": "object",
+      "required": [
+        "ch",
+        "part",
+        "acc_scale_mps2_per_lsb",
+        "gyr_scale_rads_per_lsb",
+        "temp_offset_c",
+        "temp_c_per_lsb",
+        "mount"
+      ],
+      "properties": {
+        "ch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 15
+        },
+        "part": {
+          "type": "string",
+          "examples": [
+            "BMI160"
+          ]
+        },
+        "bus": {
+          "type": "string"
+        },
+        "cs_gpio": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "addr": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "acc_range_g": {
+          "enum": [
+            2,
+            4,
+            8,
+            16
+          ]
+        },
+        "acc_odr_hz": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "gyr_range_dps": {
+          "enum": [
+            125,
+            250,
+            500,
+            1000,
+            2000
+          ]
+        },
+        "gyr_odr_hz": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "acc_scale_mps2_per_lsb": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "gyr_scale_rads_per_lsb": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "temp_offset_c": {
+          "type": "number"
+        },
+        "temp_c_per_lsb": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "sensortime_us_per_tick": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "mount": {
+          "$ref": "#/$defs/mount"
+        }
+      }
+    }
+  }
+}

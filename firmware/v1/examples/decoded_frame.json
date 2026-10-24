@@ -1,0 +1,150 @@
+{
+  "device_id": "dermis-3c84279f2a10",
+  "frame": 1234,
+  "t_device_us": 12345678,
+  "t_host_ns": null,
+  "config_id": 3,
+  "flags": [
+    "MARKER"
+  ],
+  "pods": {
+    "index_tip": {
+      "pod_id": "P-0001",
+      "mag": {
+        "ch": 0,
+        "b_ut": [
+          124.956,
+          -283.554,
+          26999.456
+        ],
+        "temp_c": 22.013274,
+        "t_us": 12346350,
+        "status": 3,
+        "flags": [],
+        "valid": true
+      },
+      "imu": {
+        "ch": 0,
+        "acc_mps2": [
+          0.083797,
+          -0.143652,
+          9.792285
+        ],
+        "gyr_rads": [
+          0.012771,
+          -0.008514,
+          0.003193
+        ],
+        "temp_c": 24.078125,
+        "t_us": 12345890,
+        "sensortime": 10597059,
+        "flags": [],
+        "valid": true
+      }
+    },
+    "thumb_tip": {
+      "pod_id": "P-0002",
+      "mag": {
+        "ch": 1,
+        "b_ut": [
+          -504.63,
+          153.792,
+          27510.56
+        ],
+        "temp_c": 21.969027,
+        "t_us": 12346350,
+        "status": 3,
+        "flags": [],
+        "valid": true
+      },
+      "imu": {
+        "ch": 1,
+        "acc_mps2": [
+          -2.896984,
+          7.062895,
+          6.464345
+        ],
+        "gyr_rads": [
+          -0.159634,
+          0.101101,
+          0.042569
+        ],
+        "temp_c": 24.054688,
+        "t_us": 12346109,
+        "sensortime": 10597072,
+        "flags": [],
+        "valid": true
+      }
+    },
+    "middle_tip": {
+      "pod_id": "P-0003",
+      "mag": {
+        "ch": 2,
+        "b_ut": [
+          36.045,
+          -84.105,
+          26523.2
+        ],
+        "temp_c": 20.840708,
+        "t_us": 12346350,
+        "status": 3,
+        "flags": [
+          "TEMP_STALE"
+        ],
+        "valid": true
+      },
+      "imu": {
+        "ch": 2,
+        "acc_mps2": [
+          0.047884,
+          -0.107739,
+          9.818621
+        ],
+        "gyr_rads": [
+          0.005321,
+          0.002128,
+          -0.004257
+        ],
+        "temp_c": 24.070312,
+        "t_us": 12346328,
+        "sensortime": 10597084,
+        "flags": [
+          "STALE"
+        ],
+        "valid": true
+      }
+    },
+    "thenar_apb": {
+      "pod_id": "P-0004",
+      "mag": {
+        "ch": 3,
+        "b_ut": null,
+        "temp_c": null,
+        "t_us": 12346350,
+        "status": 1,
+        "flags": [
+          "BAD_LENGTH"
+        ],
+        "valid": false
+      },
+      "imu": {
+        "ch": 3,
+        "acc_mps2": [
+          0.957681,
+          -9.337387,
+          2.154782
+        ],
+        "gyr_rads": [
+          0.031927,
+          -0.023413,
+          0.019156
+        ],
+        "temp_c": 24.09375,
+        "t_us": 12346547,
+        "sensortime": 10597096,
+        "flags": [],
+        "valid": true
+      }
+    }
+  }
+}
