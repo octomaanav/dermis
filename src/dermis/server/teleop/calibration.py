@@ -38,6 +38,8 @@ class Calibration:
     mapping: dict
     gyr_bias_rads: dict = field(default_factory=dict)  # location -> stationary gyro median, rad/s
     label: str = "EXPERIMENTAL baseline (unloaded, stationary); magnetic change is not force"
+    # Default keeps pre-bias-calibration JSON files loadable.
+    gyr_bias_rads: dict = field(default_factory=dict)
     path: str | None = field(default=None, compare=False)
 
     def mismatch(self, snap: Snapshot) -> str | None:

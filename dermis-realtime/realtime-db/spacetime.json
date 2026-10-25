@@ -1,0 +1,8 @@
+{
+  "dev": {
+    "run": "npm run dev"
+  },
+  "server": "maincloud",
+  "module-path": "./spacetimedb",
+  "database": "dermis-realtime-db"
+}

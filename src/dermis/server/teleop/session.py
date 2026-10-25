@@ -48,13 +48,13 @@ class TeleopSession:
                  max_message_bytes=DEFAULT_MAX_MESSAGE_BYTES, mapping_cfg: MappingConfig | None = None,
                  ctrl_cfg: ControllerConfig | None = None, source_label=None, record_path=None,
                  calibration_path=None, calib_dir="runs/teleop", gui_text=False, auto=False, robot="hand",
-                 hand_pods=None, compat=True, assume_valid=False, motion=True, log=print):
+                 hand_pods=None, compat=True, assume_valid=False, motion=True, motion_mode="free", log=print):
         self.log = log
         self.gui = gui
         self.gui_text = gui_text
         self.ctrl_cfg = ctrl_cfg or ControllerConfig(control_hz=control_hz)
         self.ctrl_cfg.control_hz = control_hz
-        self.robot = make_robot(robot, gui, control_hz, substeps, self.ctrl_cfg, hand_pods, motion)
+        self.robot = make_robot(robot, gui, control_hz, substeps, self.ctrl_cfg, hand_pods, motion, motion_mode)
         self.workspace = TELEOP_WORKSPACE
         calib = Calibration.load(calibration_path) if calibration_path else None
         self.server = TelemetryServer(host, port, max_message_bytes, TelemetryPipeline(pod_order=POD_ORDER),
@@ -98,6 +98,10 @@ class TeleopSession:
         link = self.server.status()
         seq, snap = self.server.slot.get()
         cmd = self.ctrl.tick(seq, snap, link, z_input)
+        motion = getattr(self.robot, "motion", None)
+        if motion is not None:
+            for notice in motion.pop_notices():
+                self.log(f"[teleop] {notice}")
         if self.auto:
             self._auto_operate(link)
         self._last_cmd = cmd
@@ -122,18 +126,30 @@ class TeleopSession:
         first seconds), arms when input is usable, and re-arms after reconnects. Calibration is
         never redone while armed, and a manual X pauses the auto-operator until R is pressed."""
         c, now = self.ctrl, time.monotonic()
-        if self._auto_paused or c.state != DISARMED or c.collector is not None or link["state"] != "connected":
+        if self._auto_paused or link["state"] != "connected":
             return
         if link["epoch"] != self._auto_epoch:
             self._auto_epoch, self._auto_epoch_t = link["epoch"], now
-        if now - self._auto_epoch_t < 0.5 or now < self._auto_next_try or not link["accepted"]:
-            return
-        self._auto_next_try = now + 2.0                     # retry spacing, so refusals don't flood the log
-        if c.calib is None:
-            self.log("[teleop] auto: calibrating (keep the hand still and unloaded)")
-            c.start_calibration()
-        elif c.status().control_valid:
-            c.arm(link)
+        if c.state == DISARMED and c.collector is None:
+            if now - self._auto_epoch_t < 0.5 or now < self._auto_next_try or not link["accepted"]:
+                return
+            self._auto_next_try = now + 2.0                 # retry spacing, so refusals don't flood the log
+            if c.calib is None:
+                self.log("[teleop] auto: calibrating (keep the hand still and unloaded)")
+                c.start_calibration()
+            elif c.status().control_valid:
+                c.arm(link)
+
+        # A forward-only session needs a second, deliberate movement calibration.
+        # Start it once the controller has installed the fresh stationary reference;
+        # this avoids requiring C/R/F keyboard input in the normal demo flow.
+        motion = getattr(self.robot, "motion", None)
+        if (c.state == ARMED and motion is not None and motion.mode == "forward"
+                and motion.reference() is c.calib and not motion.forward_axis_ready()
+                and not motion.forward_capture_active()):
+            ok, message = motion.start_forward_axis_capture()
+            if ok:
+                self.log(f"[teleop] auto: {message}")
 
     def do(self, c: str) -> None:
         if c == "calibrate":
@@ -148,6 +164,13 @@ class TeleopSession:
             self.ctrl.disarm("operator disarm")
         elif c == "status":
             self.log(self.status_line())
+        elif c == "calibrate_forward":
+            motion = getattr(self.robot, "motion", None)
+            if motion is None:
+                self.log("[teleop] forward-axis capture unavailable: wrist motion is disabled")
+            else:
+                _ok, message = motion.start_forward_axis_capture()
+                self.log(f"[teleop] {message}")
         elif c == "quit":
             self.quit = True
 
@@ -202,12 +225,14 @@ class TeleopSession:
             self.do("arm")
         if trig(ord("x")):
             self.do("disarm")
+        if trig(ord("f")):
+            self.do("calibrate_forward")
         z = (1.0 if down(ord("e")) else 0.0) - (1.0 if down(ord("q")) else 0.0)
         return z, False
 
 
 def _stdin_reader(q: queue.Queue, stop: threading.Event) -> None:
-    names = {"c": "calibrate", "r": "arm", "a": "arm", "x": "disarm", "s": "status", "q": "quit"}
+    names = {"c": "calibrate", "r": "arm", "a": "arm", "x": "disarm", "s": "status", "f": "calibrate_forward", "q": "quit"}
     for line in sys.stdin:
         if stop.is_set():
             return
@@ -223,6 +248,8 @@ def add_args(sp) -> None:
     sp.add_argument("--hand-pods", default="thumb_tip,index_tip,middle_tip", help="hand: one finger per pod")
     sp.add_argument("--no-motion", action="store_true",
                     help="hand: keep the wrist in place (no EXPERIMENTAL IMU motion bursts, tilt only)")
+    sp.add_argument("--motion-mode", choices=["free", "forward"], default="free",
+                    help="hand: free is bounded IMU bursts; forward learns one direction with F and removes sideways drift")
     sp.add_argument("--strict-schema", action="store_true",
                     help="reject frames that are not exactly v1-shaped (no compat normalization)")
     sp.add_argument("--assume-valid", action="store_true",
@@ -279,7 +306,7 @@ def session_from_args(a, log=print) -> TeleopSession:
                          source_label=a.source_label, record_path=a.record, calibration_path=a.calibration,
                          calib_dir=a.calib_dir, gui_text=a.gui_text, auto=a.auto, robot=a.robot,
                          hand_pods=a.hand_pods.split(","), compat=not a.strict_schema,
-                         assume_valid=a.assume_valid, motion=not a.no_motion, log=log)
+                         assume_valid=a.assume_valid, motion=not a.no_motion, motion_mode=a.motion_mode, log=log)
 
 
 def cmd_teleop(a) -> int:
@@ -296,11 +323,11 @@ def cmd_teleop(a) -> int:
         sess.robot.close()
         return 2
     if a.auto:
-        log("[teleop] AUTO: will calibrate and arm on its own once a sender streams. X disarms (pauses auto), "
-            "R re-arms. Ctrl+C quits.")
+        log("[teleop] AUTO: will calibrate and arm on its own once a sender streams. With --motion-mode forward, "
+            "it also starts the one-jab forward-axis capture. X disarms (pauses auto), R re-arms. Ctrl+C quits.")
     else:
-        log("[teleop] DISARMED. Keys (click the sim window): C calibrate, R arm, X disarm, E/Q z. "
-            "Or type c / r / x / s / q + Enter here. Ctrl+C quits.")
+        log("[teleop] DISARMED. Keys (click the sim window): C calibrate, R arm, F forward-axis capture, X disarm, E/Q z. "
+            "Or type c / r / f / x / s / q + Enter here. Ctrl+C quits.")
     stop = threading.Event()
     if sys.stdin and sys.stdin.isatty():
         threading.Thread(target=_stdin_reader, args=(sess.commands, stop), daemon=True).start()

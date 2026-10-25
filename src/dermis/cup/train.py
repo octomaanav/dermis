@@ -48,6 +48,26 @@ DEFAULTS = {"feature_groups": ["gripper", "object", "contact"], "history": 4, "l
             "train": {"epochs": 40, "batch_size": 256, "lr": 1e-3, "weight_decay": 1e-5}}
 
 
+def definitions(task: str) -> dict:
+    """Human-readable observation/action definitions stored with every checkpoint."""
+    if task == "fragile_cup":
+        return {"actions": {"effort": "finger motor force limit, N, clipped to [0.5, 40]; the fingers are always "
+                                      "commanded to close, so the squeeze is ~this value"},
+                "observations": {"opening": "m", "opening_vel": "m/s", "effort_prev": "N (own previous command)",
+                                 "obj_rel_*": "m, cup centre minus gripper grasp point, world frame",
+                                 "obj_v*": "m/s, cup velocity relative to the gripper",
+                                 "normal_l/r": "N, finger->cup normal force (SIMULATED)",
+                                 "shear_z_l/r": "N, vertical tangential finger->cup force (SIMULATED)",
+                                 "shear_l/r": "N, tangential force magnitude", "contact_l/r": "0/1, normal > 0.05 N"},
+                "history": "observation frames stacked oldest -> newest; episode start padded with the first frame",
+                "rate_hz": 30}
+    if task == "assist_hand":
+        from ..assist import env as A
+        return {"actions": {"closure": "0..1 fraction of finger flex range", "effort": "finger motor torque limit, N m"},
+                "observations": list(A.OBS_NAMES), "rate_hz": 30}
+    return {}
+
+
 def scale(a, lo=LO, hi=HI):
     return 2 * (np.asarray(a) - lo) / (hi - lo) - 1
 
@@ -83,6 +103,13 @@ def train(cfg: dict, log=print) -> Path:
     if not va_ids:                                    # a single demonstration: train on it, validate on it
         va_ids = list(tr_ids)
     tr, va = [store.load(i) for i in tr_ids], [store.load(i) for i in va_ids]
+    import hashlib
+    cfgs = {json.dumps(metas[i].get("task_config"), sort_keys=True) for i in usable}
+    if len(cfgs) != 1:
+        raise SystemExit(f"episodes in {cfg['data']} were recorded under {len(cfgs)} different task configs; "
+                         "train on one task version at a time")
+    task_cfg = json.loads(next(iter(cfgs)))
+    task_cfg_sha = hashlib.sha256(next(iter(cfgs)).encode()).hexdigest()[:12]
     pre = None
     if cfg["init_from"]:
         pre = torch.load(Path(cfg["init_from"]) / "model.pt", map_location="cpu", weights_only=False)
@@ -134,6 +161,8 @@ def train(cfg: dict, log=print) -> Path:
     on = sch["obs_names"]
     meta = {"name": cfg.get("name", out.name), "task": task, "feature_groups": cfg["feature_groups"],
             "obs_names_all": list(on),
+            "task_version": f"{task}/{(task_cfg or {}).get('damage_model', 'n/a')}/cfg-{task_cfg_sha}",
+            "task_config": task_cfg, "definitions": definitions(task),
             "history": H, "feature_names": [f"{on[c]}@t-{k}" if k else f"{on[c]}@t"
                                             for k in range(H - 1, -1, -1) for c in cols],
             "action_names": sch["action_names"], "action_low": np.asarray(lo).tolist(),

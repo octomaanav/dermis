@@ -22,8 +22,11 @@ for dt, because a 30 Hz sim sample of a ~250 ms punch would miss most of it. off
 by the sim thread. Frame gaps longer than max_dt, clock resets or an unusable IMU zero the velocity,
 and after a gap the orientation is re-levelled from gravity at once (the hand may have turned).
 
-Assumption (verify on the real glove): at calibration the IMU chip's +x points along the
-fingers (forward) and its +z out of the back of the hand. Calibration fixes "up" from gravity.
+``free`` mode assumes the IMU chip's +x points along the fingers (forward) and its +z out of
+the back of the hand. ``forward`` mode is intended for a repeatable demo: after stationary
+calibration, press F and make one short forward jab. The strongest horizontal acceleration
+defines forward; later translation is projected onto that direction and exposed only as the
+simulator's X axis. It suppresses sideways / vertical drift, but is not 3-D tracking.
 """
 from __future__ import annotations
 
@@ -59,13 +62,17 @@ class MotionEstimator:
     label = "EXPERIMENTAL IMU motion bursts (spring-back, not position tracking)"
 
     def __init__(self, pods=("wrist", "index_tip"), gain: float = 1.0, leak_v_s: float = 2.0,
-                 spring_s: float = 0.35, acc_deadband: float = 0.8, tilt_gain: float = 0.03,
-                 limits=((-0.05, 0.30), (-0.12, 0.12), (-0.10, 0.12)), max_dt: float = 0.1,
-                 still_s: float = 0.06):
+                 spring_s: float = 0.35, acc_deadband: float = 0.8, tilt_gain: float = 0.06,
+                 limits=((-0.05, 0.30), (-0.12, 0.12), (-0.10, 0.12)), max_dt: float = 0.25,
+                 still_s: float = 0.20, mode: str = "free", rotation_gate_rads: float = 1.2,
+                 axis_capture_s: float = 1.5):
+        if mode not in {"free", "forward"}:
+            raise ValueError("motion mode must be 'free' or 'forward'")
         self.pods = tuple(pods)
         self.gain, self.leak_v_s, self.spring_s = gain, leak_v_s, spring_s
         self.acc_deadband, self.tilt_gain, self.max_dt, self.still_s = acc_deadband, tilt_gain, max_dt, still_s
         self.limits = np.array(limits, dtype=float)
+        self.mode, self.rotation_gate_rads, self.axis_capture_s = mode, rotation_gate_rads, axis_capture_s
         self._lock = threading.Lock()
         self.pod: str | None = None
         self._ref = None
@@ -76,6 +83,12 @@ class MotionEstimator:
         self._last_a = np.zeros(3)
         self._acc_bias = np.zeros(3)
         self._still_t = 0.0
+        self.gyr_bias = np.zeros(3)
+        self.forward_axis: np.ndarray | None = None
+        self._capture_left = 0.0
+        self._capture_peak = np.zeros(3)
+        self._capture_peak_norm = 0.0
+        self._notices: list[str] = []
         self.peak = np.zeros(3)              # largest |offset| per axis (inspection)
 
     def set_reference(self, calib) -> None:
@@ -86,12 +99,45 @@ class MotionEstimator:
             if self.pod is None:
                 return
             g0 = np.asarray(calib.acc_baseline_mps2[self.pod], dtype=float)
+            self.gyr_bias = np.asarray(getattr(calib, "gyr_bias_rads", {}).get(self.pod, (0.0, 0.0, 0.0)), dtype=float)
+            if self.gyr_bias.shape != (3,) or not np.all(np.isfinite(self.gyr_bias)):
+                self.gyr_bias = np.zeros(3)
             self.R = _rot(_align(g0, np.array([0.0, 0.0, 1.0])))
             self.v[:] = 0.0
             self.p[:] = 0.0
             self._last_t = None
             self._last_a[:] = 0.0
+            self.forward_axis = None
             self._acc_bias[:] = 0.0
+            self._capture_left = 0.0
+
+    def start_forward_axis_capture(self) -> tuple[bool, str]:
+        """Begin a one-shot direction capture for the constrained demo mode."""
+        with self._lock:
+            if self.mode != "forward":
+                return False, "forward-axis capture requires --motion-mode forward"
+            if self.pod is None:
+                return False, "forward-axis capture requires a completed stationary calibration"
+            self.forward_axis = None
+            self._capture_left = self.axis_capture_s
+            self._capture_peak[:] = 0.0
+            self._capture_peak_norm = 0.0
+            self.v[:] = self.p[:] = self._last_a[:] = 0.0
+            return True, (f"forward-axis capture started: make one short, straight forward jab within "
+                          f"{self.axis_capture_s:.1f} s, then hold still")
+
+    def pop_notices(self) -> list[str]:
+        with self._lock:
+            notices, self._notices = self._notices, []
+            return notices
+
+    def forward_capture_active(self) -> bool:
+        with self._lock:
+            return self._capture_left > 0.0
+
+    def forward_axis_ready(self) -> bool:
+        with self._lock:
+            return self.forward_axis is not None
 
     def reference(self):
         return self._ref
@@ -137,8 +183,32 @@ class MotionEstimator:
                 # temperature/bias drift without absorbing deliberate motion.
                 self._acc_bias += min(1.0, dt / 3.0) * (residual - self._acc_bias)
             a = residual - self._acc_bias
-            if quasi_static or float(np.linalg.norm(a)) < self.acc_deadband:
+            # While rotating rapidly, accelerometer translation is ambiguous.
+            # Suppress it instead of creating an unexpected diagonal trajectory.
+            rotating = float(np.linalg.norm(gyr)) > self.rotation_gate_rads
+            if quasi_static or rotating or float(np.linalg.norm(a)) < self.acc_deadband:
                 a = np.zeros(3)
+            if self._capture_left > 0.0:
+                horizontal = a.copy()
+                horizontal[2] = 0.0
+                strength = float(np.linalg.norm(horizontal))
+                if strength > self._capture_peak_norm:
+                    self._capture_peak_norm, self._capture_peak = strength, horizontal
+                self._capture_left -= dt
+                if self._capture_left <= 0.0:
+                    if self._capture_peak_norm >= max(1.2, self.acc_deadband):
+                        self.forward_axis = self._capture_peak / self._capture_peak_norm
+                        self._notices.append("forward axis calibrated; translation is locked to simulator X")
+                    else:
+                        self._notices.append("forward-axis capture failed: no clear acceleration; press F and jab once")
+                    self.v[:] = self.p[:] = self._last_a[:] = 0.0
+                a = np.zeros(3)              # calibration gesture must not move the simulation
+            elif self.mode == "forward":
+                if self.forward_axis is None:
+                    a = np.zeros(3)
+                else:
+                    # The learned physical direction becomes exactly simulator +X.
+                    a = np.array([float(np.dot(a, self.forward_axis)), 0.0, 0.0])
             still = not a.any() and float(np.linalg.norm(gyr)) < 0.3
             self._still_t = self._still_t + dt if still else 0.0
             self.v = (self.v + 0.5 * (a + self._last_a) * dt) * math.exp(-dt / self.leak_v_s)

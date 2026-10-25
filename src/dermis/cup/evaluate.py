@@ -64,7 +64,9 @@ def _run_chunk(args) -> list[dict]:
             if viewer:
                 viewer.text("mode", f"{ctrl.label}: {ctrl.name}   scenario seed {sc.seed}", 0, (0.75, 0.1, 0.1))
             outcome, _ = run_episode(env, sc, ctrl, pour_at_s=cfg.pre_pour_s, realtime=gui, on_tick=tick)
-            out.append({"scenario": sd, "scenario_hash": scenario_hash(sd), "peak_schedule_load_n": sc.schedule.peak,
+            from .worker import schedule_id
+            out.append({"scenario": sd, "scenario_hash": scenario_hash(sd), "schedule_id": schedule_id(sc),
+                        "peak_schedule_load_n": sc.schedule.peak,
                         **outcome})
     finally:
         env.close()

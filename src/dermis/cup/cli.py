@@ -270,6 +270,25 @@ def cmd_teaching_study(a):
     return 0
 
 
+def cmd_worker(a):
+    from .worker import plot_trace, run_trace
+    spec = {"kind": "scripted", "name": a.scripted} if a.scripted else {"kind": "bc", "checkpoint": a.checkpoint}
+    r = run_trace(spec, a.seed, a.out, a.pour_at)
+    if a.plot:
+        plot_trace(a.out, a.plot)
+    print(json.dumps(r, indent=1))
+    return 0
+
+
+def cmd_inspect(a):
+    from .inspect import inspect
+    r = inspect(a.data, a.n)
+    print(json.dumps(r["summary"], indent=1))
+    if a.out:
+        Path(a.out).write_text(json.dumps(r, indent=1))
+    return 0
+
+
 def cmd_replay(a):
     """REPLAY a recorded episode: same scenario, recorded efforts played open loop. Not learned control."""
     import numpy as np
@@ -413,6 +432,21 @@ def add_parser(sub) -> None:
     sp.add_argument("--suite", default="configs/cup/dev.yaml")
     sp.add_argument("--workers", type=int)
     sp.set_defaults(fn=cmd_teaching_study)
+
+    sp = cs.add_parser("worker", help="headless run writing a per-tick physics trace (joints, cup pose, contact, status)")
+    sp.add_argument("--checkpoint")
+    sp.add_argument("--scripted", help="fixed_<N>N | slip_reflex | hybrid_expert | grip_load_expert | oracle_privileged")
+    sp.add_argument("--seed", type=int, default=2_000_000)
+    sp.add_argument("--pour-at", type=float, default=1.0)
+    sp.add_argument("--out", required=True)
+    sp.add_argument("--plot")
+    sp.set_defaults(fn=cmd_worker)
+
+    sp = cs.add_parser("inspect-episodes", help="check observation/action alignment and contact plausibility")
+    sp.add_argument("--data", required=True)
+    sp.add_argument("--n", type=int, default=6)
+    sp.add_argument("--out")
+    sp.set_defaults(fn=cmd_inspect)
 
     sp = cs.add_parser("replay", help="REPLAY a recorded episode's issued efforts (open loop; not autonomous)")
     sp.add_argument("--episode", required=True, help="path to <id>.json")

@@ -116,12 +116,13 @@ class HandRobot(_Base):
     lamp_pos = (HOME[0] - 0.12, HOME[1], HOME[2] + 0.10)     # behind and above the hand's home
     text_pos = (HOME[0] - 0.12, HOME[1] - 0.05, HOME[2] + 0.15)
 
-    def __init__(self, gui, control_hz, substeps, ctrl_cfg: ControllerConfig, pods=None, motion=True):
+    def __init__(self, gui, control_hz, substeps, ctrl_cfg: ControllerConfig, pods=None, motion=True,
+                 motion_mode: str = "free"):
         self.gui = gui
         self.hand_cfg = HandConfig(grip_pods=tuple(pods)) if pods else HandConfig()
         self.sim = HandSim(gui, control_hz * substeps, control_hz, self.hand_cfg.grip_pods)
         self.client = self.sim.client
-        self.motion = MotionEstimator() if motion else None
+        self.motion = MotionEstimator(mode=motion_mode) if motion else None
 
     def make_controller(self, mapping_cfg, ctrl_cfg, calib, calib_dir, log, initial_opening=0.0):
         return HandController(HandMapping(self.hand_cfg), ctrl_cfg, calibration=calib, calib_dir=calib_dir, log=log,
@@ -150,9 +151,9 @@ class HandRobot(_Base):
 
 
 def make_robot(kind: str, gui: bool, control_hz: int, substeps: int, ctrl_cfg: ControllerConfig, hand_pods=None,
-               motion: bool = True):
+               motion: bool = True, motion_mode: str = "free"):
     if kind == "arm":
         return ArmRobot(gui, control_hz, substeps, ctrl_cfg)
     if kind == "hand":
-        return HandRobot(gui, control_hz, substeps, ctrl_cfg, hand_pods, motion)
+        return HandRobot(gui, control_hz, substeps, ctrl_cfg, hand_pods, motion, motion_mode)
     raise ValueError(f"unknown robot {kind!r}; use hand or arm")

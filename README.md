@@ -40,6 +40,7 @@ ARCHFLAGS="-arch arm64" CFLAGS="-Dfdopen=fdopen" CXXFLAGS="-isystem $SDK/usr/inc
 | `src/dermis/server/` | TCP telemetry server and the armed TCP teleop path ([docs/tcp_teleop.md](docs/tcp_teleop.md)) |
 | `src/dermis/dashboard/` | local web dashboard |
 | `src/dermis/cup/` | separate **fragile_cup** experiment: hold a cup under a ramping load proxy; TEACH / AUTONOMOUS live modes ([docs/fragile_cup.md](docs/fragile_cup.md)) |
+| `runs/cup/autonomous_demo/` | verified autonomous fragile-cup checkpoint (SCRIPTED simulator demos), held-out 60/60, worker traces + load/status visualization ([docs/cup_autonomous_demo.md](docs/cup_autonomous_demo.md)) |
 | `src/dermis/wipe/` | wiping feasibility study (wipe_v1): physics checks, controller comparison, glove pad-trial tools; decision NO-GO ([docs/wipe_feasibility.md](docs/wipe_feasibility.md)) |
 | `src/dermis/glove/` | glove bring-up: pod discovery, inspector with labelled trials, two-point grip calibration, armed grip control, process-based ingestion; fragile_cup teaching workflow ([docs/glove_bringup.md](docs/glove_bringup.md)) |
 | `configs/` | training, benchmark and suite configs |

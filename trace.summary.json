@@ -1,0 +1,23 @@
+{
+ "trace": "trace.jsonl",
+ "ticks": 231,
+ "termination": "success",
+ "outcome_text": "SUCCESS: held for the full schedule",
+ "final_status": {
+  "movement": "HOLDING",
+  "load_status": "OK",
+  "outcome": "success",
+  "success": true,
+  "slip_cm": 0.0,
+  "rel_down_speed_mm_s": 0.0,
+  "hold_s": 7.7,
+  "required_s": 7.67,
+  "damage_ns": 0.0,
+  "budget_ns": 15.0,
+  "slip_events": 0
+ },
+ "schedule_id": "eb249327a36b",
+ "seed": 2000000,
+ "peak_normal_n": 7.95,
+ "damage_ns": 0.0
+}

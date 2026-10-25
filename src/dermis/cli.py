@@ -325,6 +325,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_wipe(sub)
     from .glove.cli import add_parser as _add_glove
     _add_glove(sub)
+    from .glass.cli import add_parser as _add_glass
+    _add_glass(sub)
 
     sp = sub.add_parser("dashboard", help="local web dashboard")
     add_source_args(sp)

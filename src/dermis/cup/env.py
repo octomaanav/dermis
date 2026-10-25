@@ -216,6 +216,7 @@ class CupHoldEnv:
         self._no_contact = 0
         self.t = 0.0
         self.pour_t0 = pour_at_s
+        self._load_announced = False
         self.done = False
         self._effort_sum = 0.0
         self._contact = self._measure_contact(4)
@@ -272,7 +273,14 @@ class CupHoldEnv:
         acc["palm"] = palm / n
         self._contact = acc
         self.t += c.dt
+        if self.pour_t0 is not None and self.t >= self.pour_t0 and not getattr(self, "_load_announced", False):
+            self._load_announced = True                       # event only; physics unaffected
+            self.stats.events.append({"tick": self.stats.ticks + 1, "event": "load_start",
+                                      "t_s": round(self.pour_t0, 4)})
         info = self._update_outcome()
+        if self.done:
+            self.stats.events.append({"tick": self.stats.ticks, "event": "termination", "termination": self.stats.termination,
+                                      "phase": info["phase"]})
         return self.observe(), self.done, info
 
     def _update_outcome(self) -> dict:

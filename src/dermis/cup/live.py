@@ -27,6 +27,8 @@ from ..data.episodes import EpisodeStore
 from .controllers import KeyboardGrip, PolicyController
 from .env import CupConfig, CupHoldEnv, CupScenario, clip_effort
 from .rollout import CupRecorder, run_episode
+from .status import HoldStatus
+from .worker import schedule_id
 
 TEACH, AUTONOMOUS = "TEACH", "AUTONOMOUS"
 JUDGE_KEYS = {"p": "pour", "r": "reset", "n": "next", "c": "compare", "t": "switch", " ": "record"}
@@ -51,6 +53,8 @@ class LiveSession:
         self.saved: list[str] = []
         self.ignored_human_events = 0
         self.last_compare: list[dict] = []
+        self.hold = HoldStatus()
+        self.hold_state: dict = {}
         self.reset()
 
     # -- motor command source -----------------------------------------------------------
@@ -97,6 +101,8 @@ class LiveSession:
         self.scenario = CupScenario.sample(self.seed, self.env.cfg)
         self.obs = self.env.reset(self.scenario, pour_at_s=None)
         self.controller.reset()
+        self.hold.reset()
+        self.hold_state = self.hold.update(self.env)
         src = getattr(self.human, "label", "KEYBOARD").lower() if self.mode == TEACH else None
         self.rec = (CupRecorder(src, self.env.cfg, self.scenario, self.human.name,
                                 extra={"mode": TEACH,
@@ -114,6 +120,9 @@ class LiveSession:
         if self.rec is not None:
             self.rec.record(self.obs, effort, self.env.t, label, tag)
         self.obs, done, info = self.env.step(effort)
+        self.hold_state = self.hold.update(self.env)              # every control tick (hysteresis)
+        if self.viewer is not None:
+            self.viewer.external_status = self.hold_state
         if self.rec is not None:
             self.rec.log(info)
             if done and self.recording:
@@ -157,7 +166,23 @@ class LiveSession:
                 "cup_slip_mm": round(1000 * float(env._grasp_rel[2] - rel[2]), 2),
                 "damage_model": env.cfg.damage_model, "damage_ns": round(st.damage_ns, 3),
                 "break_force_n": env.cfg.break_force_n, "outcome": st.termination,
-                "last_compare": self.last_compare}
+                "last_compare": self.last_compare,
+                # added for visualization (new keys only)
+                "robot_joints": {f"j{j}": round(p.getJointState(env.robot, j, physicsClientId=env.client)[0], 5)
+                                 for j in list(range(7)) + [9, 10]},
+                "cup_pose": {"pos": [round(v, 5) for v in env._cup_pos()],
+                             "quat": [round(v, 5) for v in p.getBasePositionAndOrientation(env.cup, physicsClientId=env.client)[1]]},
+                "finger_normal_total_n": round(float(c["normal"].sum()), 3),
+                "contact_convention": "per finger [L, R] in N (SIMULATED); total = L + R",
+                "hold_status": self.hold_state, "schedule_id": schedule_id(self.scenario),
+                "ramp_remaining_s": None if env.schedule_t is None else max(0.0, round(self.scenario.schedule.duration - env.schedule_t, 2)),
+                "checkpoint": self._controller_name() if self.mode == AUTONOMOUS else None}
+
+    def _controller_name(self) -> str | None:
+        """Checkpoint name for learned controllers; the scripted controller's name otherwise (dashboard uses those)."""
+        c = self.policies.get(self.active)
+        pol = getattr(c, "policy", None)
+        return pol.meta.get("name") if pol is not None and hasattr(pol, "meta") else getattr(c, "name", None)
 
     def status_lines(self) -> list[str]:
         if self.mode == TEACH:
@@ -168,7 +193,11 @@ class LiveSession:
             return [f"TEACH  input: {src} ({status})   RECORDING: {'ON' if self.recording else 'off'}   saved: {len(self.saved)}"
                     + (f"   [{msg}]" if msg else ""),
                     keys + "P: Pour   R: reset   N: next   SPACE: record on/off"]
-        meta = self.policies[self.active].policy.meta
+        pol = getattr(self.policies[self.active], "policy", None)
+        if pol is None:                                    # scripted controller in AUTONOMOUS (dashboard panel)
+            return [f"AUTONOMOUS  controller: {self._controller_name()} (SCRIPTED)  human grip input: DISCONNECTED",
+                    "P: Add load   R: reset same scenario   N: next   T: switch   C: paired comparison"]
+        meta = pol.meta
         prov = meta["provenance"]
         return [f"AUTONOMOUS  checkpoint: {meta['name']}  ({'+'.join(meta['feature_groups'])}; trained on "
                 f"{len(prov['train_episode_ids'])} {'/'.join(prov['sources']).upper()} episodes)  human grip input: DISCONNECTED",
@@ -187,7 +216,7 @@ def run_gui(mode: str, seed: int, checkpoints: list[str], teach_dir: str, cfg: C
         from .train import CupPolicy
         pols = {Path(c).name: PolicyController(CupPolicy.load(c)) for c in checkpoints}
         sess = LiveSession(env, AUTONOMOUS, seed, policies=pols, viewer=view)
-    names = {"pour": "Pour", "reset": "Reset (same scenario)", "next": "Next scenario"}
+    names = {"pour": "Add load (P)", "reset": "Reset same scenario (R)", "next": "Next scenario (N)"}
     names.update({"record": "Record on/off"} if mode == TEACH else {"switch": "Switch policy", "compare": "Paired comparison"})
     buttons = {k: view.button(v) for k, v in names.items()}
     counts = {k: view.read(b) for k, b in buttons.items()}
