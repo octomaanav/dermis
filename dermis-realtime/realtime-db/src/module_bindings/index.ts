@@ -37,6 +37,7 @@ import {
 import AddAnnotationReducer from "./add_annotation_reducer";
 import ClaimTaskReducer from "./claim_task_reducer";
 import CreateSessionReducer from "./create_session_reducer";
+import PublishRawDataSamplesReducer from "./publish_raw_data_samples_reducer";
 import PublishStateReducer from "./publish_state_reducer";
 import RequestAutonomousAssistiveGraspReducer from "./request_autonomous_assistive_grasp_reducer";
 import RequestAutonomousTrialReducer from "./request_autonomous_trial_reducer";
@@ -49,6 +50,9 @@ import UpdateTaskReducer from "./update_task_reducer";
 import AnnotationRow from "./annotation_table";
 import JobRow from "./job_table";
 import LatestStateRow from "./latest_state_table";
+import LegacyMessageRow from "./legacy_message_table";
+import LegacyUserRow from "./legacy_user_table";
+import RawDataSamplesRow from "./raw_data_samples_table";
 import SessionRow from "./session_table";
 import TaskEventRow from "./task_event_table";
 import TaskRequestRow from "./task_request_table";
@@ -124,6 +128,41 @@ const tablesSchema = __schema({
       ],
     },
     LatestStateRow,
+  ),
+  legacyMessage: __table(
+    {
+      name: "message",
+      indexes: [],
+      constraints: [],
+    },
+    LegacyMessageRow,
+  ),
+  rawDataSamples: __table(
+    {
+      name: "raw_data_samples",
+      indexes: [
+        {
+          accessor: "chunkId",
+          name: "raw_data_samples_chunk_id_idx_btree",
+          algorithm: "btree",
+          columns: ["chunkId"],
+        },
+        {
+          accessor: "sessionId",
+          name: "raw_data_samples_session_id_idx_btree",
+          algorithm: "btree",
+          columns: ["sessionId"],
+        },
+      ],
+      constraints: [
+        {
+          name: "raw_data_samples_chunk_id_key",
+          constraint: "unique",
+          columns: ["chunkId"],
+        },
+      ],
+    },
+    RawDataSamplesRow,
   ),
   session: __table(
     {
@@ -202,6 +241,27 @@ const tablesSchema = __schema({
     },
     TaskRequestRow,
   ),
+  legacyUser: __table(
+    {
+      name: "user",
+      indexes: [
+        {
+          accessor: "identity",
+          name: "user_identity_idx_btree",
+          algorithm: "btree",
+          columns: ["identity"],
+        },
+      ],
+      constraints: [
+        {
+          name: "user_identity_key",
+          constraint: "unique",
+          columns: ["identity"],
+        },
+      ],
+    },
+    LegacyUserRow,
+  ),
   viewer: __table(
     {
       name: "viewer",
@@ -230,6 +290,7 @@ const reducersSchema = __reducers(
   __reducerSchema("add_annotation", AddAnnotationReducer),
   __reducerSchema("claim_task", ClaimTaskReducer),
   __reducerSchema("create_session", CreateSessionReducer),
+  __reducerSchema("publish_raw_data_samples", PublishRawDataSamplesReducer),
   __reducerSchema("publish_state", PublishStateReducer),
   __reducerSchema(
     "request_autonomous_assistive_grasp",

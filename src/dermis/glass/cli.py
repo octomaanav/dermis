@@ -51,27 +51,49 @@ def cmd_demo(a):
         gui_replay(demo, a.speed)
 
 
+def _glove_export(a):
+    from .glove_cal import load_export
+    if a.source == "synthetic":                                # calibrations describe the real glove only
+        return None
+    exp = load_export(a.glove_cal)
+    print(f"glove calibration: {a.glove_cal} (device {exp['_device_id']})" if exp else
+          f"glove calibration: none at {a.glove_cal}; activation uses default noise levels")
+    return exp
+
+
 def cmd_pickup(a):
     from .pickup import PickupConfig
-    from .pickup_live import ReplaySource, SyntheticSource, WebSocketSource, run
+    from .pickup_live import GRIP_MEASURE, ReplaySource, SyntheticSource, WebSocketSource, run
+    export = _glove_export(a)
+    gain, ut, mode, activation = a.grip_gain, a.ut_per_n, "auto", None
+    if (a.source != "synthetic" and a.calibration and Path(a.calibration).exists()   # venue calibration is for the real glove
+            and a.grip_gain is None and a.ut_per_n is None):
+        cal = json.loads(Path(a.calibration).read_text())
+        if cal.get("grip_measure") != GRIP_MEASURE:
+            print(f"{a.calibration} was made with an older grip measure; run `python -m dermis glass pickup-calibrate` again.")
+            return 2
+        gain, ut, mode = cal["grip_gain"], cal["ut_per_n"], ("proxy" if cal["mode"] == "proxy" else "auto")
+        activation = cal.get("activation_ut") if "free_motion_max_ut" in cal else None
+        if activation is None:
+            print("  this calibration has no free-movement step: run `python -m dermis glass pickup-calibrate` again "
+                  "so moving the glove is not taken for a grip")
+        print(f"using venue calibration {a.calibration} ({cal['mode']}, {cal['created']}, pods {cal.get('pods_registered')})")
     src = {"ws": lambda: WebSocketSource(a.url), "replay": lambda: ReplaySource(a.file),
            "synthetic": lambda: SyntheticSource(a.profile)}[a.source]()
-    gain, ut = a.grip_gain, a.ut_per_n
-    if a.calibration and Path(a.calibration).exists() and a.grip_gain is None and a.ut_per_n is None:
-        cal = json.loads(Path(a.calibration).read_text())
-        gain, ut = cal["grip_gain"], cal["ut_per_n"]
-        print(f"using venue calibration {a.calibration} ({cal['mode']}, {cal['created']})")
-    cfg = PickupConfig(grip_gain=gain or 0.012, crack_force_n=None if a.no_crack else 16.0)
-    r = run(src, cfg, gui=not a.headless, record=a.record, ut_per_n=ut or 160.0, duration_s=a.duration)
+    cfg = PickupConfig(grip_gain=gain or PickupConfig.grip_gain, crack_force_n=None if a.no_crack else 16.0, grip_mode=a.grip_mode,
+                       lift_mode=a.lift_mode, imu_acc_dev=a.imu_acc, imu_gyro=a.imu_gyro)
+    r = run(src, cfg, gui=not a.headless, record=a.record, ut_per_n=ut or 160.0, duration_s=a.duration,
+            grip_mode=mode, export=export, activation_ut=activation)
     print(json.dumps({k: v for k, v in r.items() if k != "events"}), "\n" + "\n".join(json.dumps(e) for e in r["events"]))
 
 
 def cmd_pickup_calibrate(a):
     from .pickup_live import ReplaySource, SyntheticSource, WebSocketSource, calibrate
+    export = _glove_export(a)
     src = {"ws": lambda: WebSocketSource(a.url), "replay": lambda: ReplaySource(a.file),
            "synthetic": lambda: SyntheticSource("normal")}[a.source]()
     try:
-        cal = calibrate(src, a.out)
+        cal = calibrate(src, a.out, export=export)
     finally:
         src.close()
     print(json.dumps(cal, indent=1), f"\nsaved {a.out}")
@@ -125,11 +147,18 @@ def add_parser(sub) -> None:
     sp.add_argument("--source", choices=["ws", "replay", "synthetic"], default="ws")
     sp.add_argument("--url", default="ws://192.168.4.1:81/ws", help="glove Wi-Fi WebSocket")
     sp.add_argument("--file", help="raw glove frames JSONL for --source replay")
-    sp.add_argument("--profile", choices=["cycle", "normal", "weak", "crush"], default="cycle", help="--source synthetic")
-    sp.add_argument("--grip-gain", type=float, help="sim digit effort (N*m) per N of glove grip (default: calibration, else 0.012)")
+    sp.add_argument("--profile", choices=["cycle", "normal", "light", "crush"], default="cycle", help="--source synthetic")
+    sp.add_argument("--grip-gain", type=float, help="sim digit effort (N*m) per N of glove grip (default: calibration, else 0.027)")
     sp.add_argument("--ut-per-n", type=float, help="proxy scale when frames carry no force_n (default: calibration, else 160)")
     sp.add_argument("--calibration", default="runs/glass/pickup_calibration.json", help="from `glass pickup-calibrate`")
+    sp.add_argument("--glove-cal", default="runs/glass/glove_calibration.json",
+                    help="glove calibration export (dermis-calibration v1): pod map, rest field, noise, load axis")
     sp.add_argument("--no-crack", action="store_true", help="disable the simulated crack threshold")
+    sp.add_argument("--grip-mode", choices=["combined", "per_finger"], default="combined",
+                    help="combined: mean of the two strongest pods drives all fingers (robust to a loose glove)")
+    sp.add_argument("--lift-mode", choices=["imu", "auto"], default="imu", help="imu: hand motion starts the lift")
+    sp.add_argument("--imu-acc", type=float, default=0.8, help="m/s^2 change of |acc| that counts as motion")
+    sp.add_argument("--imu-gyro", type=float, default=0.5, help="rad/s change of gyro that counts as motion")
     sp.add_argument("--record", help="write received frames + every tick to this JSONL")
     sp.add_argument("--headless", action="store_true")
     sp.add_argument("--duration", type=float, help="stop after this many seconds")
@@ -143,4 +172,5 @@ def add_parser(sub) -> None:
     sp.add_argument("--url", default="ws://192.168.4.1:81/ws")
     sp.add_argument("--file")
     sp.add_argument("--out", default="runs/glass/pickup_calibration.json")
+    sp.add_argument("--glove-cal", default="runs/glass/glove_calibration.json")
     sp.set_defaults(fn=cmd_pickup_calibrate)

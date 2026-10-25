@@ -18,6 +18,37 @@ npm run dev
 
 Set `VITE_SPACETIMEDB_HOST=ws://127.0.0.1:3000` and `VITE_SPACETIMEDB_DB_NAME=dermis-realtime-db` only when the defaults are not suitable. The browser stores its identity token in `localStorage`; Node tools store their token in `.dermis-tokens/`, which is ignored by git. Use the same secure token file for `create_session` and the process that publishes its state.
 
+## Public Maincloud + static dashboard deployment
+
+For a judge-facing deployment, host the database on Maincloud and the built `dist/` directory on any static HTTPS host. The database and the browser use public URLs; the local Python worker makes an outbound connection to Maincloud, so no device needs the Mac's LAN IP or an open inbound port.
+
+```bash
+# One time: authenticate the CLI with the Maincloud account that owns the database.
+spacetime login
+
+# Publish/update the existing public Dermis database.
+spacetime publish dermis-realtime-db --module-path spacetimedb --server maincloud --yes
+
+# Build the browser app with the public database endpoint baked in.
+VITE_SPACETIMEDB_HOST=https://maincloud.spacetimedb.com \
+VITE_SPACETIMEDB_DB_NAME=dermis-realtime-db \
+npm run build
+```
+
+Deploy `dist/` to a static host such as Netlify, Vercel, or Cloudflare Pages. The included `public/_redirects` is copied to `dist/_redirects` by Vite and makes Netlify-style static hosts serve `index.html` for `/room/SESSION_ID` QR links. Configure the equivalent SPA fallback if using another host.
+
+When the local worker should publish to Maincloud, use a fresh cloud token file; local-server tokens cannot authenticate there:
+
+```bash
+export SPACETIMEDB_HOST=https://maincloud.spacetimedb.com
+export SPACETIMEDB_DB_NAME=dermis-realtime-db
+
+npm run room:assist -- --token-file .dermis-tokens/assist-maincloud.token
+npm run worker:assist -- --session-id SESSION_ID --token-file .dermis-tokens/assist-maincloud.token
+```
+
+The Maincloud web dashboard is for database inspection, queries, logs, and usage. Share the deployed React dashboard—not the Maincloud administration URL—with judges.
+
 ## Synthetic publisher
 
 ```bash
@@ -87,6 +118,31 @@ npm run worker:cup -- --session-id SESSION_ID --token-file .dermis-tokens/cup-ro
 Open `http://MAC_CURRENT_WIFI_IP:5173` on the desktop. Its QR code links a judge phone to `/room/SESSION_ID`; the phone can request one cup trial and mark a timestamped moment. Both devices must use the same non-isolated Wi-Fi network. The worker prefers `DERMIS_PYTHON` when set, otherwise this repository's `.venv/bin/python`.
 
 The verification run used an independent judge identity and produced request `verify-cup-challenge-2`: it was claimed once, published 231 `PYBULLET_LOCAL_SIMULATION` snapshots, and completed `SUCCESS`. The earlier replay publisher remains a distinct, visibly labelled recorded-playback demo—not a live worker.
+
+## Raw data samples for visualizers
+
+`raw_data_samples` is a public historical archive for visualizers. It is deliberately separate from the single-row `latest_state` table: live views subscribe to `latest_state`; review, charting, or replay apps subscribe to `raw_data_samples` and filter on `session_id`.
+
+Each row is one ordered, immutable `GZIP_NDJSON_UTF8` batch. It includes the sequence/time range and `sample_count` for selective loading, plus a compressed `payload` byte array. Publishers may write at most 256 samples, 256 KiB compressed, and 4 MiB uncompressed per batch. The database validates that chunks append in sequence/time order and only a session's authorized publisher may create them.
+
+The synthetic publisher now writes ten frames per archive row. Each decompressed NDJSON line follows this stable contract:
+
+```json
+{"schema_version":1,"sequence":42,"source_time_us":4200000,"clock_domain":"SYNTHETIC_MONOTONIC","robot_joints":[0.0,0.2],"cup_position":[0.45,0,0.18],"cup_orientation":[0,0,0,1],"applied_downward_load":3.2,"fingertip_normal_loads":[0.8,1.1,0.7],"cup_relative_displacement":0.002,"outcome":"IN_PROGRESS"}
+```
+
+For example, a browser visualizer can inflate one subscribed row without a server round trip:
+
+```ts
+async function decodeRawBatch(row: { payload: number[] }) {
+  const compressed = Uint8Array.from(row.payload);
+  const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip'));
+  const text = await new Response(stream).text();
+  return text.trim().split('\n').map(line => JSON.parse(line));
+}
+```
+
+Raw data is an archive, not a queue: a visualizer should sort rows by `chunk_sequence`, use their sequence ranges to request only the needed chunks, and never use it for low-latency control. For very long recordings, export completed compressed batches to durable object storage rather than treating a realtime database as unlimited cold storage.
 
 ## Three-finger assistive-hand room
 

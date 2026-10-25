@@ -1,6 +1,16 @@
 /** Dermis shared simulation-state module. No physics, training, or control lives here. */
 import { schema, t, table, SenderError, type InferSchema, type ReducerCtx } from 'spacetimedb/server';
 
+// These two tables belong to the original cloud starter that was already
+// published under this database name.  Retain them during the migration so
+// publishing Dermis never silently destroys an existing online row.
+const legacyUser = table({ name: 'user', public: true }, {
+  identity: t.identity().primaryKey(), name: t.option(t.string()), online: t.bool(),
+});
+const legacyMessage = table({ name: 'message', public: true }, {
+  sender: t.identity(), sent: t.timestamp(), text: t.string(),
+});
+
 const session = table({ name: 'session', public: true }, {
   sessionId: t.string().primaryKey(),
   ownerIdentity: t.identity(), publisherIdentity: t.identity(),
@@ -16,6 +26,21 @@ const latestState = table({ name: 'latest_state', public: true }, {
   robotJoints: t.array(t.f64()), cupPosition: t.array(t.f64()), cupOrientation: t.array(t.f64()),
   appliedDownwardLoad: t.f64(), fingertipNormalLoads: t.array(t.f64()),
   cupRelativeDisplacement: t.f64(), outcome: t.string(),
+});
+
+// Historical/raw telemetry is intentionally stored as compressed batches, not
+// one JSON object per database row. A public visualizer can subscribe to this
+// table, filter by session, and inflate `payload` according to `encoding`.
+// The cursor lets the reducer validate append order without scanning history.
+const rawDataSamples = table({ name: 'raw_data_samples', public: true }, {
+  chunkId: t.string().primaryKey(), sessionId: t.string().index('btree'), streamGeneration: t.u32(),
+  chunkSequence: t.u64(), sampleCount: t.u16(), firstSequence: t.u64(), lastSequence: t.u64(),
+  firstSourceTimeMicros: t.i64(), lastSourceTimeMicros: t.i64(), encoding: t.string(),
+  uncompressedBytes: t.u32(), payload: t.array(t.u8()), createdAt: t.timestamp(),
+});
+const rawDataCursor = table({ name: 'raw_data_cursor' }, {
+  sessionId: t.string().primaryKey(), streamGeneration: t.u32(), lastChunkSequence: t.u64(),
+  lastSequence: t.u64(), lastSourceTimeMicros: t.i64(), updatedAt: t.timestamp(),
 });
 
 const annotation = table({ name: 'annotation', public: true }, {
@@ -50,7 +75,7 @@ const viewer = table({ name: 'viewer', public: true }, {
   connectionId: t.connectionId().primaryKey(), identity: t.identity(), connectedAt: t.timestamp(),
 });
 
-const spacetimedb = schema({ session, latestState, annotation, job, taskRequest, taskEvent, viewer });
+const spacetimedb = schema({ legacyUser, legacyMessage, session, latestState, rawDataSamples, rawDataCursor, annotation, job, taskRequest, taskEvent, viewer });
 export default spacetimedb;
 type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
 
@@ -150,6 +175,41 @@ export const publishState = spacetimedb.reducer({
       throw new SenderError('sequence must strictly increase within the current stream generation');
     ctx.db.latestState.sessionId.update({ ...args, serverReceiptTime: ctx.timestamp });
   } else ctx.db.latestState.insert({ ...args, serverReceiptTime: ctx.timestamp });
+});
+
+export const publishRawDataSamples = spacetimedb.reducer({
+  chunkId: t.string(), sessionId: t.string(), streamGeneration: t.u32(), chunkSequence: t.u64(), sampleCount: t.u16(),
+  firstSequence: t.u64(), lastSequence: t.u64(), firstSourceTimeMicros: t.i64(), lastSourceTimeMicros: t.i64(),
+  encoding: t.string(), uncompressedBytes: t.u32(), payload: t.array(t.u8()),
+}, (ctx, args) => {
+  const currentSession = requirePublisher(ctx, args.sessionId);
+  if (currentSession.status !== 'ACTIVE') throw new SenderError('session is not active');
+  if (args.streamGeneration !== currentSession.streamGeneration)
+    throw new SenderError('stream generation mismatch; create a new session after a publisher restart');
+  bounded(args.chunkId, 'chunkId', 160);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(args.chunkId)) throw new SenderError('chunkId contains unsupported characters');
+  if (args.chunkId !== `${args.sessionId}.g${args.streamGeneration}.c${args.chunkSequence}`)
+    throw new SenderError('chunkId must be derived from session, stream generation, and chunk sequence');
+  if (args.sampleCount < 1 || args.sampleCount > 256) throw new SenderError('sampleCount must be between 1 and 256');
+  if (args.firstSequence > args.lastSequence) throw new SenderError('raw sample sequence range is invalid');
+  if (args.firstSourceTimeMicros > args.lastSourceTimeMicros) throw new SenderError('raw sample time range is invalid');
+  if (args.encoding !== 'GZIP_NDJSON_UTF8') throw new SenderError('only GZIP_NDJSON_UTF8 raw batches are supported');
+  if (args.payload.length < 1 || args.payload.length > 262_144) throw new SenderError('compressed raw payload must be 1..262144 bytes');
+  if (args.uncompressedBytes < args.payload.length || args.uncompressedBytes > 4_194_304)
+    throw new SenderError('uncompressed raw payload must be within 1..4194304 bytes and no smaller than its compressed payload');
+  if (ctx.db.rawDataSamples.chunkId.find(args.chunkId)) throw new SenderError('raw data chunk already exists');
+  const cursor = ctx.db.rawDataCursor.sessionId.find(args.sessionId);
+  if (cursor) {
+    if (cursor.streamGeneration !== args.streamGeneration) throw new SenderError('raw data stream generation mismatch');
+    if (args.chunkSequence <= cursor.lastChunkSequence || args.firstSequence <= cursor.lastSequence || args.firstSourceTimeMicros < cursor.lastSourceTimeMicros)
+      throw new SenderError('raw data chunks must append in increasing chunk, sequence, and source-time order');
+  }
+  const row = { ...args, createdAt: ctx.timestamp };
+  ctx.db.rawDataSamples.insert(row);
+  const nextCursor = { sessionId: args.sessionId, streamGeneration: args.streamGeneration,
+    lastChunkSequence: args.chunkSequence, lastSequence: args.lastSequence,
+    lastSourceTimeMicros: args.lastSourceTimeMicros, updatedAt: ctx.timestamp };
+  if (cursor) ctx.db.rawDataCursor.sessionId.update(nextCursor); else ctx.db.rawDataCursor.insert(nextCursor);
 });
 
 export const addAnnotation = spacetimedb.reducer(

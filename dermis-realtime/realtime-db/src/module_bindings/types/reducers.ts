@@ -9,6 +9,7 @@ import { type Infer as __Infer } from "spacetimedb";
 import AddAnnotationReducer from "../add_annotation_reducer";
 import ClaimTaskReducer from "../claim_task_reducer";
 import CreateSessionReducer from "../create_session_reducer";
+import PublishRawDataSamplesReducer from "../publish_raw_data_samples_reducer";
 import PublishStateReducer from "../publish_state_reducer";
 import RequestAutonomousAssistiveGraspReducer from "../request_autonomous_assistive_grasp_reducer";
 import RequestAutonomousTrialReducer from "../request_autonomous_trial_reducer";
@@ -18,6 +19,9 @@ import UpdateTaskReducer from "../update_task_reducer";
 export type AddAnnotationParams = __Infer<typeof AddAnnotationReducer>;
 export type ClaimTaskParams = __Infer<typeof ClaimTaskReducer>;
 export type CreateSessionParams = __Infer<typeof CreateSessionReducer>;
+export type PublishRawDataSamplesParams = __Infer<
+  typeof PublishRawDataSamplesReducer
+>;
 export type PublishStateParams = __Infer<typeof PublishStateReducer>;
 export type RequestAutonomousAssistiveGraspParams = __Infer<
   typeof RequestAutonomousAssistiveGraspReducer

@@ -51,6 +51,40 @@ export const LatestState = __t.object("LatestState", {
 });
 export type LatestState = __Infer<typeof LatestState>;
 
+export const Message = __t.object("Message", {
+  sender: __t.identity(),
+  sent: __t.timestamp(),
+  text: __t.string(),
+});
+export type Message = __Infer<typeof Message>;
+
+export const RawDataCursor = __t.object("RawDataCursor", {
+  sessionId: __t.string(),
+  streamGeneration: __t.u32(),
+  lastChunkSequence: __t.u64(),
+  lastSequence: __t.u64(),
+  lastSourceTimeMicros: __t.i64(),
+  updatedAt: __t.timestamp(),
+});
+export type RawDataCursor = __Infer<typeof RawDataCursor>;
+
+export const RawDataSamples = __t.object("RawDataSamples", {
+  chunkId: __t.string(),
+  sessionId: __t.string(),
+  streamGeneration: __t.u32(),
+  chunkSequence: __t.u64(),
+  sampleCount: __t.u16(),
+  firstSequence: __t.u64(),
+  lastSequence: __t.u64(),
+  firstSourceTimeMicros: __t.i64(),
+  lastSourceTimeMicros: __t.i64(),
+  encoding: __t.string(),
+  uncompressedBytes: __t.u32(),
+  payload: __t.byteArray(),
+  createdAt: __t.timestamp(),
+});
+export type RawDataSamples = __Infer<typeof RawDataSamples>;
+
 export const Session = __t.object("Session", {
   sessionId: __t.string(),
   ownerIdentity: __t.identity(),
@@ -90,6 +124,13 @@ export const TaskRequest = __t.object("TaskRequest", {
   resultSummary: __t.option(__t.string()),
 });
 export type TaskRequest = __Infer<typeof TaskRequest>;
+
+export const User = __t.object("User", {
+  identity: __t.identity(),
+  name: __t.option(__t.string()),
+  online: __t.bool(),
+});
+export type User = __Infer<typeof User>;
 
 export const Viewer = __t.object("Viewer", {
   connectionId: __t.connectionId(),

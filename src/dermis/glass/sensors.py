@@ -30,8 +30,9 @@ class SyntheticGlove:
         self.frame = 0
         self.t_us = 1_000_000
 
-    def make(self, contact: dict) -> dict:
-        """contact[pod] = {'normal': N, 'shear_z': N (vertical friction carried), 'shear_h': N}."""
+    def make(self, contact: dict, acc_extra_z: float = 0.0) -> dict:
+        """contact[pod] = {'normal': N, 'shear_z': N (vertical friction carried), 'shear_h': N}.
+        acc_extra_z: SYNTHETIC vertical hand acceleration (m/s^2) added to the IMU's gravity reading."""
         r = self.rng
         self.frame += 1
         self.t_us += PERIOD_US
@@ -54,7 +55,7 @@ class SyntheticGlove:
                 "ch": POD_CH[name], "b_ut": [round(float(v), 3) for v in b], "temp_c": round(26.0 + 0.5 * i + r.normal(0, 0.02), 4),
                 "force_n": round(float(f), 6), "force_valid": True, "t_us": self.t_us + 2300 + 120 * i, "status": 3,
                 "flags": flags, "valid": True}}
-        acc = np.array([0.0, 0.0, 9.80665]) + r.normal(0, 0.02, 3)
+        acc = np.array([0.0, 0.0, 9.80665 + acc_extra_z]) + r.normal(0, 0.02, 3)
         imu_t = self.t_us + 2800
         return {"schema_version": SCHEMA_VERSION, "device_id": DEVICE_ID, "frame": self.frame, "t_device_us": self.t_us,
                 "t_host_ns": None, "config_id": CONFIG_ID, "flags": ["SYNTHETIC"], "pods": pods,
