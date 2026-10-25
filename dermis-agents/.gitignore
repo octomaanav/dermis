@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.env
+.agent_seed
+agent_readmes/
+*.egg-info/
+.pytest_cache/
+hosted/*/__pycache__/
+.vscode/
