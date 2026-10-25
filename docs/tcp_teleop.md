@@ -180,7 +180,8 @@ letter and press Enter in Terminal 1.
 - **While armed**, the fingers close and open smoothly every 4 s, following the synthetic magnetic
   change. With `--tilt-xy` the gripper also drifts slowly in X/Y inside the box.
 - **Stopping the sender** (`--faults pause@10:3`, or Ctrl+Z in Terminal 2):
-  - Within 250 ms the lamp turns orange, Cartesian motion stops and the opening holds.
+- Within 500 ms (the default for the measured 10 Hz Wi-Fi stream) the lamp turns orange,
+  Cartesian motion stops and the opening holds. Set `--watchdog-ms` explicitly for another source.
   - The controller resumes when frames return.
   - Disconnecting turns the lamp red, and the controller needs **R** to re-arm.
 
@@ -313,7 +314,7 @@ python -m dermis send-test --mode synthetic --faults ci   # the integration-test
 - **Z** stays fixed, except while E/Q are held when armed.
 - **Limits:** 0.05 m/s per axis (`--max-speed`) and 0.5 m/s² acceleration. The opening is
   rate-limited to 0.10 m/s and smoothed with low-pass filters. The workspace is x 0.40–0.65, y ±0.15
-  and z 0.10–0.35 m, enforced on the integrated position target. The watchdog defaults to 250 ms
+  and z 0.10–0.35 m, enforced on the integrated position target. The watchdog defaults to 500 ms
   (`--watchdog-ms`, env `DERMIS_WATCHDOG_MS`).
 - **Limitations:**
   - The magnetic change is **not a calibrated force**.

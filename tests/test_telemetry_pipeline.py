@@ -119,6 +119,18 @@ def test_stale_hold_is_bounded(decoded_frame):
     assert np.isnan(s.mag_held[0]).all()
 
 
+def test_robust_filter_rejects_a_single_sensor_spike(decoded_frame):
+    pipe = TelemetryPipeline(mag_filter_window=5, mag_filter_tau_s=0.08)
+    baseline = None
+    for n in range(1, 8):
+        s = feed(pipe, frame(decoded_frame, n))
+        baseline = s.mag_filtered[0].copy()
+    d = frame(decoded_frame, 8)
+    d["pods"]["index_tip"]["mag"]["b_ut"] = (baseline + np.array([50_000.0, -50_000.0, 50_000.0])).tolist()
+    s = feed(pipe, d)
+    np.testing.assert_allclose(s.mag_filtered[0], baseline, atol=1e-9)
+
+
 def test_source_watchdog():
     pipe = TelemetryPipeline(source_timeout_s=0.1)
     assert pipe.source_stale()                  # nothing received yet

@@ -1,0 +1,4 @@
+.pio/
+.venv/
+*.csv
+calibration_data/

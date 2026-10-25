@@ -20,12 +20,16 @@ from __future__ import annotations
 
 import copy
 import math
+import zlib
 
 from .validation import frame_validator
 
 MAG_KEYS = ("ch", "b_ut", "temp_c", "t_us", "status", "flags", "valid")
 IMU_KEYS = ("ch", "acc_mps2", "gyr_rads", "temp_c", "t_us", "sensortime", "flags", "valid")
 OPTIONAL_NULL = {"temp_c"}
+ROOT_FLAGS = {"CONFIG_CHANGED", "OVERRUN", "TX_DROP", "MARKER"}
+MAG_FLAGS = {"STALE", "BAD_LENGTH", "CHIP_ERROR", "RAIL", "COMM_FAIL", "TEMP_STALE", "RECOVERED"}
+IMU_FLAGS = {"STALE", "COMM_FAIL", "ACC_RAIL", "GYR_RAIL", "TEMP_STALE", "RECOVERED"}
 
 
 def _locations() -> set:
@@ -45,6 +49,22 @@ def _fix_record(rec: dict, kind: str, where: str, assume_valid: bool, notes: lis
     if "flags" not in rec:
         rec["flags"] = []
         notes.append(f"{where}: no 'flags'; using []")
+    else:
+        allowed = MAG_FLAGS if kind == "mag" else IMU_FLAGS
+        mapped: list[str] = []
+        for flag in rec["flags"]:
+            replacements = {
+                "NOT_FOUND": ("COMM_FAIL",),
+                "SPI_ERROR": ("COMM_FAIL",),
+                "SATURATED": (("RAIL",) if kind == "mag" else ("ACC_RAIL", "GYR_RAIL")),
+                "SED": ("RECOVERED",),
+            }.get(flag, (flag,))
+            for replacement in replacements:
+                if replacement in allowed and replacement not in mapped:
+                    mapped.append(replacement)
+        if mapped != rec["flags"]:
+            notes.append(f"{where}: normalized draft flags {rec['flags']} -> {mapped}")
+        rec["flags"] = mapped
     if "valid" not in rec:
         values = [rec.get("b_ut")] if kind == "mag" else [rec.get("acc_mps2"), rec.get("gyr_rads")]
         rec["valid"] = bool(assume_valid and all(_finite(v) for v in values))
@@ -67,6 +87,15 @@ def normalize_frame(obj: dict, assume_valid: bool = False) -> tuple[dict, list[s
         return obj, []
     notes: list[str] = []
     out = copy.deepcopy(obj)
+    if isinstance(out.get("config_id"), str):
+        original = out["config_id"]
+        out["config_id"] = zlib.crc32(original.encode("utf-8"))
+        notes.append(f"config_id: draft string {original!r} mapped to stable u32 {out['config_id']}")
+    if isinstance(out.get("flags"), list):
+        kept = [flag for flag in out["flags"] if flag in ROOT_FLAGS]
+        if kept != out["flags"]:
+            notes.append(f"frame.flags: ignored non-v1 draft flags {out['flags']} -> {kept}")
+        out["flags"] = kept
     new_pods: dict = {}
     locs = _locations()
     for key, val in out["pods"].items():
@@ -101,5 +130,16 @@ def normalize_frame(obj: dict, assume_valid: bool = False) -> tuple[dict, list[s
             loc = f"{kind}{val.get('ch', '')}"
             new_pods[loc] = {"pod_id": "", "mag": rec if kind == "mag" else None, "imu": rec if kind == "imu" else None}
         notes.append(f"pods.{key}: bare {kind} record moved to pods.{loc}")
+    # v0 has exactly one palm IMU at the frame top level. Give it the canonical wrist
+    # location so orientation and translation use the actual glove layout.
+    top_imu = out.pop("imu", None)
+    if isinstance(top_imu, dict):
+        rec = _fix_record(top_imu, "imu", "imu", assume_valid, notes)
+        wrist = new_pods.get("wrist")
+        if wrist is None:
+            new_pods["wrist"] = {"pod_id": str(top_imu.get("imu_id", "")), "mag": None, "imu": rec}
+        elif isinstance(wrist, dict) and wrist.get("imu") is None:
+            wrist["imu"] = rec
+        notes.append("imu: top-level v0 palm IMU moved to pods.wrist")
     out["pods"] = new_pods
     return out, notes

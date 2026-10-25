@@ -1,17 +1,14 @@
 """Human-like 3-finger hand: a real-time picture of the glove's sensors (TELEOPERATION test, EXPERIMENTAL).
 
-Each finger follows its own pod, so you can see every sensor move independently:
+Finger motion is touch-gated, rather than treating every magnetic fluctuation as a joint command:
 
-    thumb        <- thumb_tip  mag   baseline-subtracted change along one chip axis -> flex 0..1
-    index finger <- index_tip  mag   (same gain / deadband / saturation as the arm mapping)
-    middle finger<- middle_tip mag
-    hand tilt    <- wrist IMU gravity direction (first usable of attitude_pods: wrist, then index_tip)
-                    relative to its calibrated rest direction -> roll / pitch about the wrist.
-                    Quasi-static only (|a| within tolerance of 1 g); no yaw.
+    index + thumb close only when BOTH fingertip pads report a noise-qualified touch
+    middle + thumb close only when BOTH fingertip pads report a noise-qualified touch
+    hand pose    <- the single palm/wrist IMU: filtered gyro drives roll / pitch / yaw, with gravity
+                    continuously correcting roll and pitch. Yaw is relative and can slowly drift.
     hand motion  <- MotionEstimator (motion.py): short IMU motion bursts such as a punch, with
                     spring-back to home. EXPERIMENTAL; IMUs cannot track position.
-    finger colour = which pod (thumb blue, index orange, middle purple);
-    fingertip pad colour = that pod's magnetometer state: green fresh, yellow held/STALE, red unusable.
+    fingertip pad colour = touch/quality state: cyan touching, green fresh, yellow held, red unusable.
 
 Per-finger validity: a finger whose pod is unusable holds its last flex; the others keep moving.
 The whole hand pauses only when no finger is usable or the watchdog fires (TeleopController).
@@ -49,11 +46,11 @@ FOREARM_R, FOREARM_L = 0.026, 0.11
 WRIST_LOCAL = (-PALM_HALF[0] - 0.012, 0.0, 0.0)
 HOME = (0.0, 0.0, 0.22)              # wrist position with zero motion offset
 WRIST = HOME
-SKIN, SKIN_DARK = (0.93, 0.78, 0.66, 1), (0.80, 0.62, 0.50, 1)
-SLEEVE = (0.25, 0.27, 0.32, 1)
-CLAW_COLOR = {"thumb_tip": (0.25, 0.45, 0.85, 1), "index_tip": (0.95, 0.55, 0.15, 1), "middle_tip": (0.6, 0.3, 0.75, 1)}
+SKIN, SKIN_DARK = (0.72, 0.48, 0.34, 1), (0.56, 0.34, 0.23, 1)
+SLEEVE = (0.08, 0.10, 0.14, 1)
+FLOOR = (0.075, 0.085, 0.105, 1)
 LINKS_PER_FINGER = 4                 # 3 revolute phalanges + fixed fingertip pad
-CAMERA = (0.50, 200, -18, (0.13, 0.0, 0.21))     # distance, yaw, pitch, target: palm side, whole punch reach
+CAMERA = (0.52, 52, -30, (0.06, 0.0, 0.20))      # close, oblique view; enough room for punch motion
 
 
 def flex_limits(pod: str) -> tuple:
@@ -63,14 +60,22 @@ def flex_limits(pod: str) -> tuple:
 @dataclass
 class HandConfig:
     grip_pods: tuple = FINGERS            # one claw per pod, in this order (name kept for Calibration)
-    grip_axis: int = 2
+    grip_axis: int = 2                       # retained for calibration-file compatibility
     grip_sign: float = 1.0
-    grip_gain_per_ut: float = 1.0 / 6000.0
-    grip_deadband_ut: float = 150.0
-    grip_saturation_ut: float = 8000.0
+    grip_gain_per_ut: float = 1.0 / 4500.0
+    grip_deadband_ut: float = 350.0
+    grip_saturation_ut: float = 6500.0
+    contact_on_sigma: float = 8.0            # Schmitt trigger: touch-on threshold above baseline noise
+    contact_off_sigma: float = 4.0
+    contact_min_ut: float = 350.0
+    contact_release_min_ut: float = 180.0
+    contact_full_scale_ut: float = 4500.0
+    baseline_adapt_s: float = 25.0            # slow unloaded drift tracking; frozen while touching
+    opposition_pod: str = "thumb_tip"
     attitude_pods: tuple = ("wrist", "index_tip")
     optional_imu_pods: tuple = ("wrist", "index_tip")   # baselines captured at calibration when usable
     max_tilt_rad: float = 0.6
+    max_yaw_rad: float = math.pi
     gravity_tolerance: float = 0.15
 
     def to_dict(self) -> dict:
@@ -84,15 +89,25 @@ class HandOutput:
     usable: bool
     reason: str | None
     flex: list                            # per claw 0..1, or None = hold (that pod unusable)
-    attitude: tuple | None                # (roll, pitch) rad, or None = hold
+    attitude: tuple | None                # gravity fallback: (roll, pitch) rad, or None = hold
     signals: dict
 
 
 class HandMapping:
-    label = f"{LABEL}: 3-finger hand (per-pod magnetic change -> finger flex, IMU -> hand tilt + motion bursts)"
+    label = f"{LABEL}: paired-pad touch -> finger contact; filtered palm IMU -> full hand pose"
 
     def __init__(self, cfg: HandConfig | None = None):
         self.cfg = cfg or HandConfig()
+        self._calib = None
+        self._baseline: dict[str, np.ndarray] = {}
+        self._contact: dict[str, bool] = {}
+        self._last_t_us: dict[str, int] = {}
+
+    def _reset_filter_state(self, calib) -> None:
+        self._calib = calib
+        self._baseline = {p: np.asarray(v, dtype=float).copy() for p, v in calib.mag_baseline_ut.items()}
+        self._contact = {p: False for p in self.cfg.grip_pods}
+        self._last_t_us = {}
 
     def required_channels(self) -> list[tuple[str, str]]:
         return [("mag", p) for p in self.cfg.grip_pods]          # all needed to calibrate
@@ -120,21 +135,61 @@ class HandMapping:
         c = self.cfg
         if calib is None:
             return HandOutput(False, "not calibrated", [None] * len(c.grip_pods), None, {})
-        flex, status, held = [], {}, []
+        if self._calib is not calib:
+            self._reset_filter_state(calib)
+        status, held = {}, []
+        strength: dict[str, float] = {}
+        deltas: dict[str, float] = {}
+        thresholds: dict[str, float] = {}
         for pod in c.grip_pods:
             why = self._mag_ok(snap, pod, False)
             if why or pod not in calib.mag_baseline_ut:
-                flex.append(None)
+                strength[pod] = math.nan
                 status[pod] = "unusable"
                 held.append(pod)
                 continue
             i = snap.pods.index(pod)
-            delta = float(snap.mag_held[i][c.grip_axis] - calib.mag_baseline_ut[pod][c.grip_axis])
-            drive = max(0.0, min(c.grip_sign * delta - c.grip_deadband_ut, c.grip_saturation_ut))
-            flex.append(max(0.0, min(1.0, c.grip_gain_per_ut * drive)))
-            status[pod] = "fresh" if snap.mag_fresh[i] else "held"
+            b = snap.mag_filtered[i]
+            base = self._baseline[pod]
+            magnitude = float(np.linalg.norm(b - base))
+            noise = float(np.linalg.norm(np.asarray(calib.mag_std_ut[pod], dtype=float)))
+            on = max(c.contact_min_ut, c.contact_on_sigma * noise)
+            off = max(c.contact_release_min_ut, c.contact_off_sigma * noise)
+            touching = self._contact.get(pod, False)
+            touching = magnitude >= (off if touching else on)
+            self._contact[pod] = touching
+            rec = snap.frame.pods.get(pod)
+            t_us = rec.mag.t_us if rec is not None and rec.mag is not None else snap.frame.t_device_us
+            prev_t = self._last_t_us.get(pod, t_us)
+            self._last_t_us[pod] = t_us
+            dt = max(0.0, min(0.25, (t_us - prev_t) / 1e6))
+            if not touching and magnitude < on and c.baseline_adapt_s > 0:
+                alpha = 1.0 - math.exp(-dt / c.baseline_adapt_s)
+                self._baseline[pod] = base + alpha * (b - base)
+            span = max(1.0, c.contact_full_scale_ut - off)
+            strength[pod] = float(np.clip((magnitude - off) / span, 0.0, 1.0)) if touching else 0.0
+            deltas[pod], thresholds[pod] = magnitude, on
+            status[pod] = "touch" if touching else ("fresh" if snap.mag_fresh[i] else "held")
+
+        # A digit never curls from its pad alone. It needs simultaneous opposition-pad contact;
+        # this is the visual analogue of two fingertips actually touching the same object/each other.
+        flex_map: dict[str, float | None] = {p: (None if p in held else 0.0) for p in c.grip_pods}
+        opp = c.opposition_pod
+        paired: list[str] = []
+        if opp not in held and self._contact.get(opp, False):
+            for pod in c.grip_pods:
+                if pod == opp or pod in held or not self._contact.get(pod, False):
+                    continue
+                pair_strength = min(strength[opp], strength[pod])
+                flex_map[pod] = pair_strength
+                flex_map[opp] = max(float(flex_map.get(opp) or 0.0), pair_strength)
+                paired.append(pod)
+        flex = [flex_map[p] for p in c.grip_pods]
         signals = {"claw": {p: (None if f is None else round(f, 2)) for p, f in zip(c.grip_pods, flex)},
-                   "status": status}
+                   "status": status, "contact": dict(self._contact), "paired_with_thumb": paired,
+                   "touch_strength": {p: None if not np.isfinite(v) else round(v, 3) for p, v in strength.items()},
+                   "delta_ut": {p: round(v, 1) for p, v in deltas.items()},
+                   "touch_on_ut": {p: round(v, 1) for p, v in thresholds.items()}}
         if held:
             signals["held"] = held
         attitude = None
@@ -144,7 +199,7 @@ class HandMapping:
             i = snap.pods.index(pod)
             if not snap.imu_held_mask[i] or not np.all(np.isfinite(snap.acc_held[i])):
                 continue
-            acc = snap.acc_held[i]
+            acc = snap.acc_filtered[i]
             if abs(float(np.linalg.norm(acc)) - G) > c.gravity_tolerance * G:
                 signals["tilt"] = f"{pod}: not quasi-static, palm held"
                 break
@@ -174,7 +229,7 @@ class HandController(TeleopController):
     def __init__(self, mapping: HandMapping, *a, motion=None, **kw):
         super().__init__(mapping, *a, **kw)
         self.flex = np.zeros(len(mapping.cfg.grip_pods))
-        self.att = np.zeros(2)
+        self.att = np.zeros(3)
         self.offset = np.zeros(3)
         self.motion = motion
 
@@ -192,10 +247,17 @@ class HandController(TeleopController):
         for i, f in enumerate(out.flex):
             if f is not None:
                 self.flex[i] = float(np.clip(self._approach(self.flex[i], f, self.flex_tau_s, self.max_flex_rate, dt), 0, 1))
-        if out.attitude is not None:
-            lim = self.mapping.cfg.max_tilt_rad
-            self.att = np.clip(self._approach(self.att, np.array(out.attitude), self.tilt_tau_s, self.max_tilt_rate, dt),
-                               -lim, lim)
+        if self.motion is not None:
+            want_att = self.motion.orientation_rpy()
+        elif out.attitude is not None:
+            want_att = np.array([out.attitude[0], out.attitude[1], 0.0])
+        else:
+            want_att = None
+        if want_att is not None and np.all(np.isfinite(want_att)):
+            limits = np.array([self.mapping.cfg.max_tilt_rad, self.mapping.cfg.max_tilt_rad,
+                               self.mapping.cfg.max_yaw_rad])
+            self.att = np.clip(self._approach(self.att, want_att, self.tilt_tau_s, self.max_tilt_rate, dt),
+                               -limits, limits)
         if self.motion is not None:
             want = np.clip(self.motion.offset(), self.motion.limits[:, 0], self.motion.limits[:, 1])
             self.offset = self._approach(self.offset, want, self.offset_tau_s, self.max_hand_speed, dt)
@@ -219,7 +281,13 @@ class HandSim:
         import pybullet_data
         self.p = p
         self.gui = gui
-        self.client = p.connect(p.GUI if gui else p.DIRECT)
+        if gui:
+            self.client = p.connect(
+                p.GUI,
+                options="--background_color_red=0.025 --background_color_green=0.035 --background_color_blue=0.055",
+            )
+        else:
+            self.client = p.connect(p.DIRECT)
         k = dict(physicsClientId=self.client)
         self._k = k
         p.setAdditionalSearchPath(pybullet_data.getDataPath(), **k)
@@ -229,8 +297,11 @@ class HandSim:
         if gui:
             p.configureDebugVisualizer(p.COV_ENABLE_KEYBOARD_SHORTCUTS, 0, **k)
             p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0, **k)
+            p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 1, **k)
             p.resetDebugVisualizerCamera(*CAMERA, **k)
-        p.loadURDF("plane.urdf", **k)
+        floor_c = p.createCollisionShape(p.GEOM_BOX, halfExtents=(2.0, 2.0, 0.025), **k)
+        floor_v = p.createVisualShape(p.GEOM_BOX, halfExtents=(2.0, 2.0, 0.025), rgbaColor=FLOOR, **k)
+        self.floor = p.createMultiBody(0, floor_c, floor_v, (0.0, 0.0, -0.025), **k)
         self.pods = tuple(pods)
         self.body = self._build()
         self.joints = [LINKS_PER_FINGER * n + j for n in range(len(self.pods)) for j in range(3)]
@@ -241,11 +312,12 @@ class HandSim:
         self.thumb_scale = 1.0              # < 1 while the thumb is stopped by a finger
         self._set_joints([0.0] * len(self.joints))
         self._home_marker()
-        self._pose(np.zeros(3), 0.0, 0.0)
+        self._pose(np.zeros(3), 0.0, 0.0, 0.0)
 
     def _home_marker(self) -> None:
         p, k = self.p, self._k
-        vis = p.createVisualShape(p.GEOM_CYLINDER, radius=0.03, length=0.002, rgbaColor=(0.2, 0.6, 1.0, 0.35), **k)
+        vis = p.createVisualShape(p.GEOM_CYLINDER, radius=0.022, length=0.001,
+                                  rgbaColor=(0.15, 0.55, 0.85, 0.30), **k)
         p.createMultiBody(0, -1, vis, (HOME[0], HOME[1], 0.001), **k)        # floor dot under home
 
     def _build(self) -> int:
@@ -305,12 +377,12 @@ class HandSim:
         for i, c in enumerate((SKIN, SLEEVE, SKIN_DARK)):
             p.changeVisualShape(body, -1, shapeIndex=i, rgbaColor=c, **k)
         for n, pod in enumerate(self.pods):
-            col = CLAW_COLOR.get(pod, SKIN)
             for seg in range(3):
                 link = LINKS_PER_FINGER * n + seg
                 p.changeVisualShape(body, link, shapeIndex=0, rgbaColor=SKIN_DARK, **k)      # knuckle
-                shade = tuple(c + (1 - c) * 0.25 * seg for c in col[:3]) + (1,)
-                p.changeVisualShape(body, link, shapeIndex=1, rgbaColor=shade, **k)
+                shade = tuple(min(1.0, c + 0.035 * seg) for c in SKIN[:3]) + (1,)
+                p.changeVisualShape(body, link, shapeIndex=1, rgbaColor=shade,
+                                    specularColor=(0.10, 0.08, 0.06), **k)
                 p.changeDynamics(body, link, jointLowerLimit=0.0, jointUpperLimit=flex_limits(pod)[seg] + 0.05,
                                  lateralFriction=1.0, **k)
             p.changeVisualShape(body, LINKS_PER_FINGER * n + 3, rgbaColor=(0.6, 0.6, 0.6, 1), **k)
@@ -338,11 +410,10 @@ class HandSim:
     def _joint_targets(self, flex) -> list[float]:
         return [f * lim for pod, f in zip(self.pods, flex) for lim in flex_limits(pod)]
 
-    def _pose(self, offset, roll: float, pitch: float) -> None:
-        """Hand tilt (roll about the hand axis x, pitch about y) is applied about the wrist; the wrist
-        sits at HOME + motion offset."""
+    def _pose(self, offset, roll: float, pitch: float, yaw: float = 0.0) -> None:
+        """Full palm attitude is applied about the wrist, which sits at HOME + motion offset."""
         p, k = self.p, self._k
-        q = p.getQuaternionFromEuler((roll, pitch, 0.0))
+        q = p.getQuaternionFromEuler((roll, pitch, yaw))
         R = np.array(p.getMatrixFromQuaternion(q)).reshape(3, 3)
         wrist = np.array(HOME) + np.asarray(offset)
         pos = wrist - R @ np.array(WRIST_LOCAL)
@@ -352,8 +423,10 @@ class HandSim:
     def apply(self, cmd: Command) -> None:
         p, k = self.p, self._k
         flex = cmd.extra.get("flex", [0.0] * len(self.pods))
-        roll, pitch = cmd.extra.get("attitude", [0.0, 0.0])
-        self._pose(cmd.extra.get("offset", [0.0, 0.0, 0.0]), roll, pitch)
+        attitude = list(cmd.extra.get("attitude", [0.0, 0.0, 0.0]))
+        attitude.extend([0.0] * (3 - len(attitude)))
+        roll, pitch, yaw = attitude[:3]
+        self._pose(cmd.extra.get("offset", [0.0, 0.0, 0.0]), roll, pitch, yaw)
         flex = list(flex)
         self._set_joints(self._joint_targets(flex))
         self.thumb_scale = 1.0
@@ -373,17 +446,18 @@ class HandSim:
         p, k = self.p, self._k
         q = [p.getJointState(self.body, j, **k)[0] for j in self.joints]
         pos, orn = p.getBasePositionAndOrientation(self.body, **k)
-        roll, pitch, _ = p.getEulerFromQuaternion(orn)
+        roll, pitch, yaw = p.getEulerFromQuaternion(orn)
         R = np.array(p.getMatrixFromQuaternion(orn)).reshape(3, 3)
         wrist = np.array(pos) + R @ np.array(WRIST_LOCAL)
-        return {"joints": q, "palm_rp": [roll, pitch], "wrist": wrist.tolist(),
+        return {"joints": q, "palm_rp": [roll, pitch], "palm_rpy": [roll, pitch, yaw], "wrist": wrist.tolist(),
                 "offset": (wrist - np.array(HOME)).tolist()}
 
     def show_status(self, status: dict) -> None:
         """Colour each fingertip pad by its pod's magnetometer state (cheap; GUI only)."""
         if not self.gui:
             return
-        colors = {"fresh": (0.1, 0.85, 0.2, 1), "held": (1.0, 0.8, 0.0, 1), "unusable": (0.9, 0.1, 0.1, 1)}
+        colors = {"touch": (0.05, 0.85, 1.0, 1), "fresh": (0.15, 0.75, 0.28, 1),
+                  "held": (1.0, 0.72, 0.05, 1), "unusable": (0.9, 0.08, 0.08, 1)}
         for n, pod in enumerate(self.pods):
             c = colors.get(status.get(pod), (0.6, 0.6, 0.6, 1))
             if self._tip_color.get(pod) != c:
