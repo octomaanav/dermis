@@ -1,0 +1,6 @@
+[agent]
+  address = "agent1qt7agfdeh7vzppus94fclf7l27v0sqxhhq5stdr553w3rv8p9cadxzgfazs"
+  include = ""
+  readme_path = "README.md"
+  description = "industrial arms and grippers on production lines, where yield and repeatability matter"
+  starter_prompts = ["What's our yield on cans and bottles with SafeGrip?", "Industrial review of episode_0010"]

@@ -1,0 +1,9 @@
+[project]
+name = "dermis-quadruped"
+version = "0.2.0"
+description = "Quadruped Foot-Contact Agent"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "uagents>=0.25.5",
+]

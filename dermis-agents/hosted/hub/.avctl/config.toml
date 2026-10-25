@@ -1,0 +1,6 @@
+[agent]
+  address = "agent1q02mu7cnwewnnc0k4v474nx5qjda4mdp9tvxlwjtrtccmyce7r5qqgzq3xj"
+  include = ""
+  readme_path = "README.md"
+  description = "Robot touch intelligence: routes Dermis tactile-sensor questions to specialist agents for humanoid, industrial, quadruped, warehouse and more, with charts and tables."
+  starter_prompts = ["Compare all applications on episode 4", "Show me a dashboard chart", "Which items do we drop most in the warehouse?", "Pivot table of success by scenario", "Are any sensor readings unreliable?"]

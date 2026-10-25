@@ -1,0 +1,1 @@
+https://raw.githubusercontent.com/Soham1010/dermis-agents/main/snapshot/dermis_snapshot.json

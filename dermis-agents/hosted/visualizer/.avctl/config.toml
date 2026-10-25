@@ -1,0 +1,6 @@
+[agent]
+  address = "agent1qtnldfaawly9j4gt55ujddflthw688dulmqm9hvzznmgprd7s94fgryg5rl"
+  include = ""
+  readme_path = "README.md"
+  description = "charts of Dermis recordings: time series, overlays, histograms, scatter plots, pies, radar profiles, heatmaps and dashboards"
+  starter_prompts = ["Dashboard", "Plot episode 4", "Compare episode 4 with SafeGrip on", "Histogram of peak force", "Scatter latency vs mass"]

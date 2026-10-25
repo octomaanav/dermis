@@ -1,0 +1,6 @@
+[agent]
+  address = "agent1qfr6rvpp8uhl53fsq773e2ykz2nfzd57v5lug57hf3supv8km6947c9xur0"
+  include = ""
+  readme_path = "README.md"
+  description = "the Dermis sensors themselves: saturation, noise, dropped frames and calibration state"
+  starter_prompts = ["Are any readings unreliable in episode_0030?", "Sensor health check across the fleet"]

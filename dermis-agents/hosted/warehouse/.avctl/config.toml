@@ -1,0 +1,6 @@
+[agent]
+  address = "agent1qvykzu7slhz3nzchcu20v7gyhg25kp9crtekl6gu2rul8l6v5qy265xanhg"
+  include = ""
+  readme_path = "README.md"
+  description = "logistics picking of mixed items, from light balls to a 520 g bottle"
+  starter_prompts = ["Which items do we drop most?", "Warehouse review of the bottle episodes"]

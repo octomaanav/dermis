@@ -1,0 +1,6 @@
+[agent]
+  address = "agent1qwls2zmjuzdr9q89448pq9wnumjx8fw2l2k5wfyyvrkr2nxnec87k97gsx5"
+  include = ""
+  readme_path = "README.md"
+  description = "analysis of any dataset you bring (CSV, TSV, JSON or JSON lines by URL or pasted into the chat) and of the Dermis recordings: describe, filter, group, pivot, computed columns, correlations, charts"
+  starter_prompts = ["Analyze https://raw.githubusercontent.com/mwaskom/seaborn-data/master/tips.csv", "Paste a CSV and ask a question about it", "Peak force by object and scenario", "Which columns correlate most?"]
