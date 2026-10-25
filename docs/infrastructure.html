@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dermis Infrastructure</title>
+<!--
+  Dermis infrastructure diagram. Open directly in a browser.
+  Logos: Simple Icons (CDN, pinned). Entries without a Simple Icons logo, or offline, show a lettered badge.
+  Edit NODES / EDGES / STACK below; connectors redraw automatically.
+-->
+<style>
+  :root {
+    --bg: #131416; --panel: #1b1d21; --node: #22252b; --node-border: #343842; --text: #e8eaed;
+    --muted: #9aa0a8; --line: #c9ced6; --label-bg: #131416;
+    --c-hw: #f59e0b; --c-local: #3b82f6; --c-rt: #22c55e; --c-cli: #a855f7; --c-ext: #94a3b8; --c-rehab: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 28px 32px 8px; }
+  header h1 { margin: 0 0 4px; font-size: 26px; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--muted); max-width: 900px; }
+  .scroller { overflow-x: auto; padding: 8px 16px 24px; }
+  #canvas { position: relative; width: 1700px; height: 850px; margin: 0 auto; }
+  svg#wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 2; }
+  .group { position: absolute; z-index: 1; border: 1.5px solid; border-radius: 12px; background: color-mix(in srgb, var(--panel) 85%, transparent); }
+  .group .gtitle { position: absolute; top: -13px; left: 14px; padding: 2px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;
+                   letter-spacing: .06em; text-transform: uppercase; background: var(--bg); border: 1.5px solid; }
+  .node { position: absolute; z-index: 3; width: 250px; min-height: 70px; display: flex; gap: 10px; align-items: center; padding: 10px 12px;
+          background: var(--node); border: 1px solid var(--node-border); border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,.35); }
+  .node .logo { flex: 0 0 34px; height: 34px; display: grid; place-items: center; border-radius: 8px; background: #2c3038; }
+  .node .logo img { width: 22px; height: 22px; filter: invert(1) brightness(.95); }
+  .logo img.raw { filter: none !important; }
+  .logo.light { background: #fff !important; }
+  .logo.cover { overflow: hidden; }
+  .logo.cover img { width: 100% !important; height: 100% !important; object-fit: cover; }
+  .mono { width: 100%; height: 100%; display: grid; place-items: center; border-radius: 8px; font-weight: 700; font-size: 12px; color: #fff; }
+  .node .t { font-weight: 600; font-size: 13.5px; }
+  .node .s { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+  .wire { fill: none; stroke: var(--line); stroke-width: 1.4; opacity: .85; }
+  .wire.dash { stroke-dasharray: 6 5; }
+  .wlabel { font-size: 10.5px; fill: var(--text); paint-order: stroke; stroke: var(--label-bg); stroke-width: 5px; stroke-linejoin: round; }
+  section.stack { max-width: 1700px; margin: 0 auto; padding: 8px 32px 48px; }
+  section.stack h2 { font-size: 18px; margin: 12px 0 14px; }
+  .cats { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .cat { background: var(--panel); border: 1px solid var(--node-border); border-radius: 12px; padding: 14px 16px; }
+  .cat h3 { margin: 0 0 10px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .logos { display: flex; flex-wrap: wrap; gap: 10px; }
+  .chip { display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 6px; border-radius: 999px; background: var(--node); border: 1px solid var(--node-border); }
+  .chip .logo { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; background: #2c3038; }
+  .chip .logo img { width: 15px; height: 15px; filter: invert(1) brightness(.95); }
+  .chip .mono { border-radius: 50%; font-size: 10px; }
+  .chip span { font-size: 12.5px; }
+  .legend { display: flex; gap: 18px; color: var(--muted); font-size: 12px; margin-top: 10px; }
+  .legend i { display: inline-block; width: 28px; border-top: 1.5px solid var(--line); vertical-align: middle; margin-right: 6px; }
+  .legend i.d { border-top-style: dashed; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Dermis: glove-to-robot touch</h1>
+  <p>A sensing glove streams magnetic-skin and IMU data to a local simulator and learning stack, shares live sessions through SpacetimeDB, and powers a stroke-rehab practice app with Claude-written session reviews.</p>
+  <div class="legend"><span><i></i>data flow</span><span><i class="d"></i>external agent / dashboard integration</span></div>
+</header>
+
+<div class="scroller"><div id="canvas"><svg id="wires"><defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#c9ced6"/></marker></defs></svg></div></div>
+
+<section class="stack">
+  <h2>Tech stack</h2>
+  <div class="cats" id="stack"></div>
+</section>
+
+<script>
+const CDN = "https://cdn.jsdelivr.net/npm/simple-icons@13.21.0/icons/";
+// "logos/..." = local official logo files (docs/logos), "icon:..." = generic line icon (not a company)
+const LOCAL_STYLE = { "logos/fetchai.png": "light", "logos/mana.png": "cover", "logos/anthropic.svg": "mono" };
+const ICONS = {
+  phone: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#e8eaed" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg>',
+  globe: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#e8eaed" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M2.5 12h19M12 2.5c2.6 2.6 3.9 5.8 3.9 9.5s-1.3 6.9-3.9 9.5c-2.6-2.6-3.9-5.8-3.9-9.5S9.4 5.1 12 2.5z"/></svg>',
+};
+
+// groups: [id, title, color var, x, y, w, h]
+const GROUPS = [
+  ["hw", "Dermis Glove", "--c-hw", 20, 50, 300, 560],
+  ["local", "Local laptop · Python dermis", "--c-local", 380, 50, 560, 520],
+  ["rt", "Shared realtime · dermis-realtime", "--c-rt", 1000, 50, 300, 560],
+  ["cli", "Clients", "--c-cli", 1360, 50, 320, 290],
+  ["ext", "External services", "--c-ext", 1360, 400, 320, 420],
+  ["rehab", "Stroke rehab", "--c-rehab", 380, 640, 920, 180],
+];
+
+// nodes: id, x, y, title, subtitle, logo (simple-icons slug or null), monogram, monogram color
+const NODES = [
+  ["pods", 45, 100, "Magnetic skin pods", "4× MLX90393: thumb, index, middle, palm", null, "MX", "#0f766e"],
+  ["imu", 45, 230, "IMU", "Bosch accelerometer + gyroscope", "bosch", "BO", "#b91c1c"],
+  ["esp", 45, 360, "ESP32-S3 firmware", "PlatformIO / Arduino · on-device tare & span", "espressif", "ES", "#b45309"],
+  ["hotspot", 45, 480, "Wi-Fi hotspot", "WebSocket ws://192.168.4.1:81/ws · 10 Hz JSON", null, "WS", "#4b5563"],
+
+  ["recv", 400, 100, "Glove receiver", "WebSocket client in a child process", "python", "PY", "#3776ab"],
+  ["cal", 400, 230, "Calibration", "Rest field, noise, load axis, free-motion levels", null, "CA", "#2563eb"],
+  ["grip", 400, 360, "Grip engine", "Grip activation + IMU vertical speed → sim grip & lift", "numpy", "NP", "#4d77cf"],
+  ["sim", 670, 100, "PyBullet simulator", "3-finger hand · live cup pick-up", null, "PB", "#7c3aed"],
+  ["nn", 670, 340, "NN training", "PyTorch behavioral cloning", "pytorch", "PT", "#ee4c2c"],
+  ["ckpt", 670, 220, "Checkpoints & traces", "Trained policies + session recordings", null, "RN", "#475569"],
+  ["dash", 670, 460, "Training dashboard", "localhost · train, evaluate, activate", null, "DB", "#0891b2"],
+
+  ["workers", 1025, 100, "Node workers", "Run simulator sessions, publish state", "nodedotjs", "NO", "#5fa04e"],
+  ["stdb", 1025, 215, "SpacetimeDB", "Local or Maincloud · reducers", null, "ST", "#16a34a"],
+  ["tables", 1025, 330, "Tables", "session · latest_state · raw_data_samples · annotation · job · task_request · task_event", null, "TB", "#15803d"],
+  ["observer", 1025, 480, "Observer web app", "React + Vite · QR room links", "react", "RE", "#149eca"],
+
+  ["phone", 1385, 95, "Phone browsers", "Judges & observers via QR", "icon:phone", "PH", "#6d28d9"],
+  ["browser", 1385, 225, "Laptop browser", "Shared live session", "icon:globe", "WB", "#7e22ce"],
+
+  ["fetch", 1385, 440, "Fetch.ai agents", "Data visualization", "logos/fetchai.png", "FA", "#1d4ed8"],
+  ["mana", 1385, 550, "Mana.space", "Visual dashboard", "logos/mana.png", "MA", "#9333ea"],
+  ["claude", 1385, 685, "Anthropic Claude", "Messages API · session reviews", "logos/anthropic.svg", "AN", "#d97757"],
+
+  ["practice", 410, 685, "Hand Practice app", "Guided grip exercises · sessions in localStorage", "html5", "HT", "#e34f26"],
+  ["proxy", 1010, 685, "Review proxy", "Python server · API key kept server-side", "python", "PY", "#3776ab"],
+];
+
+// edges: from, to, label, dashed
+const EDGES = [
+  ["pods", "esp", "SPI · magnetic field"],
+  ["imu", "esp", "SPI · acc / gyro"],
+  ["esp", "hotspot", "JSON frames"],
+  ["hotspot", "recv", "WebSocket"],
+  ["hotspot", "practice", "WebSocket"],
+  ["recv", "grip", "pod field + IMU"],
+  ["cal", "grip", "thresholds + scale"],
+  ["grip", "sim", ""],
+  ["nn", "ckpt", "model.pt + metadata"],
+  ["ckpt", "sim", "trained policy"],
+  ["dash", "nn", "train · evaluate · activate"],
+  ["workers", "sim", "runs Python sim"],
+  ["workers", "stdb", "reducers"],
+  ["stdb", "tables", ""],
+  ["tables", "observer", "subscriptions"],
+  ["observer", "phone", ""],
+  ["observer", "browser", "live session"],
+  ["stdb", "fetch", "session data", true],
+  ["fetch", "mana", "visualizations", true],
+  ["practice", "proxy", "session summary"],
+  ["proxy", "claude", "review request → report"],
+];
+
+const STACK = [
+  ["Hardware & firmware", [["Espressif ESP32-S3", "espressif"], ["PlatformIO", "platformio"], ["Arduino", "arduino"],
+    ["Melexis MLX90393", null, "MX", "#0f766e"], ["Bosch IMU", "bosch"], ["WebSocket", null, "WS", "#4b5563"], ["Bluetooth LE (Bleak)", "bluetooth"]]],
+  ["Simulation & machine learning", [["Python", "python"], ["PyBullet", null, "PB", "#7c3aed"], ["PyTorch", "pytorch"], ["NumPy", "numpy"],
+    ["pandas", "pandas"], ["Matplotlib", null, "MP", "#11557c"], ["FFmpeg", "ffmpeg"]]],
+  ["Realtime & web", [["SpacetimeDB", null, "ST", "#16a34a"], ["Node.js", "nodedotjs"], ["TypeScript", "typescript"], ["React", "react"],
+    ["Vite", "vite"], ["HTML5", "html5"]]],
+  ["AI & agents", [["Anthropic Claude", "logos/anthropic.svg"], ["Fetch.ai", "logos/fetchai.png"], ["Mana.space", "logos/mana.png"]]],
+];
+
+function mono(text, color) {
+  const d = document.createElement("div");
+  d.className = "mono"; d.textContent = text; d.style.background = color;
+  return d;
+}
+function logoBox(slug, monoText, monoColor) {
+  const box = document.createElement("div");
+  box.className = "logo";
+  if (slug && slug.startsWith("icon:")) {
+    box.innerHTML = ICONS[slug.slice(5)];
+  } else if (slug) {
+    const img = new Image();
+    img.alt = "";
+    if (slug.startsWith("logos/")) {
+      img.src = slug;
+      const st = LOCAL_STYLE[slug];
+      if (st === "light") { box.classList.add("light"); img.classList.add("raw"); }
+      if (st === "cover") { box.classList.add("cover"); img.classList.add("raw"); }
+    } else img.src = CDN + slug + ".svg";
+    img.onerror = () => box.replaceChildren(mono(monoText, monoColor));   // offline or slug missing
+    box.append(img);
+  } else box.append(mono(monoText, monoColor));
+  return box;
+}
+
+const canvas = document.getElementById("canvas");
+const css = getComputedStyle(document.documentElement);
+for (const [id, title, color, x, y, w, h] of GROUPS) {
+  const g = document.createElement("div");
+  g.className = "group"; g.id = "g-" + id;
+  Object.assign(g.style, { left: x + "px", top: y + "px", width: w + "px", height: h + "px", borderColor: css.getPropertyValue(color) });
+  const t = document.createElement("div");
+  t.className = "gtitle"; t.textContent = title;
+  t.style.borderColor = css.getPropertyValue(color); t.style.color = css.getPropertyValue(color);
+  g.append(t); canvas.append(g);
+}
+for (const [id, x, y, title, sub, slug, m, mc] of NODES) {
+  const n = document.createElement("div");
+  n.className = "node"; n.id = id;
+  n.style.left = x + "px"; n.style.top = y + "px";
+  const txt = document.createElement("div");
+  txt.innerHTML = `<div class="t"></div><div class="s"></div>`;
+  txt.querySelector(".t").textContent = title; txt.querySelector(".s").textContent = sub;
+  n.append(logoBox(slug, m, mc), txt);
+  canvas.append(n);
+}
+
+const svg = document.getElementById("wires");
+function rect(id) {
+  const c = canvas.getBoundingClientRect(), r = document.getElementById(id).getBoundingClientRect();
+  return { l: r.left - c.left, r: r.right - c.left, t: r.top - c.top, b: r.bottom - c.top,
+           cx: (r.left + r.right) / 2 - c.left, cy: (r.top + r.bottom) / 2 - c.top };
+}
+function draw() {
+  svg.querySelectorAll("path.wire, text.wlabel").forEach(e => e.remove());
+  for (const [a, b, label, dashed] of EDGES) {
+    const A = rect(a), B = rect(b);
+    let x1, y1, x2, y2, c1x, c1y, c2x, c2y;
+    if (B.l >= A.r - 10) {                       // target to the right
+      [x1, y1, x2, y2] = [A.r, A.cy, B.l, B.cy];
+      const d = Math.max(40, (x2 - x1) / 2); [c1x, c1y, c2x, c2y] = [x1 + d, y1, x2 - d, y2];
+    } else if (B.r <= A.l + 10) {                // target to the left
+      [x1, y1, x2, y2] = [A.l, A.cy, B.r, B.cy];
+      const d = Math.max(40, (x1 - x2) / 2); [c1x, c1y, c2x, c2y] = [x1 - d, y1, x2 + d, y2];
+    } else if (B.t >= A.b) {                     // below
+      [x1, y1, x2, y2] = [A.cx, A.b, B.cx, B.t];
+      const d = Math.max(20, (y2 - y1) / 2); [c1x, c1y, c2x, c2y] = [x1, y1 + d, x2, y2 - d];
+    } else {                                     // above
+      [x1, y1, x2, y2] = [A.cx, A.t, B.cx, B.b];
+      const d = Math.max(20, (y1 - y2) / 2); [c1x, c1y, c2x, c2y] = [x1, y1 - d, x2, y2 + d];
+    }
+    const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p.setAttribute("d", `M${x1},${y1} C${c1x},${c1y} ${c2x},${c2y} ${x2},${y2}`);
+    p.setAttribute("class", "wire" + (dashed ? " dash" : ""));
+    p.setAttribute("marker-end", "url(#arrow)");
+    svg.append(p);
+    if (label) {
+      const t = 0.5, u = 1 - t;                  // bezier midpoint
+      const mx = u*u*u*x1 + 3*u*u*t*c1x + 3*u*t*t*c2x + t*t*t*x2;
+      const my = u*u*u*y1 + 3*u*u*t*c1y + 3*u*t*t*c2y + t*t*t*y2;
+      const tx = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      tx.setAttribute("x", mx); tx.setAttribute("y", my - 4); tx.setAttribute("text-anchor", "middle");
+      tx.setAttribute("class", "wlabel"); tx.textContent = label;
+      svg.append(tx);
+    }
+  }
+}
+draw();
+addEventListener("resize", draw);
+document.fonts?.ready.then(draw);
+
+const stack = document.getElementById("stack");
+for (const [cat, items] of STACK) {
+  const c = document.createElement("div");
+  c.className = "cat";
+  c.innerHTML = `<h3></h3><div class="logos"></div>`;
+  c.querySelector("h3").textContent = cat;
+  for (const [name, slug, m, mc] of items) {
+    const chip = document.createElement("div");
+    chip.className = "chip";
+    const s = document.createElement("span"); s.textContent = name;
+    chip.append(logoBox(slug, m || name.slice(0, 2).toUpperCase(), mc || "#4b5563"), s);
+    c.querySelector(".logos").append(chip);
+  }
+  stack.append(c);
+}
+</script>
+</body>
+</html>
