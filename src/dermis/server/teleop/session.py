@@ -238,7 +238,10 @@ def add_args(sp) -> None:
                     help="also draw a state text line in the 3D view (costs GUI frame rate)")
     sp.add_argument("--control-hz", type=int, default=30)
     sp.add_argument("--substeps", type=int, default=8, help="physics substeps per control tick")
-    sp.add_argument("--watchdog-ms", type=float, default=_env("DERMIS_WATCHDOG_MS", 250.0))
+    # The production glove is a 10 Hz Wi-Fi source. Its measured p99 host receive interval is
+    # about 382 ms, so 250 ms caused false pause/resume cycles even though frames kept arriving.
+    sp.add_argument("--watchdog-ms", type=float, default=_env("DERMIS_WATCHDOG_MS", 500.0),
+                    help="pause after this much telemetry silence (default 500 ms for the 10 Hz Wi-Fi glove)")
     sp.add_argument("--max-speed", type=float, default=0.05, help="Cartesian speed limit per axis, m/s")
     sp.add_argument("--resume-policy", choices=["auto", "manual"], default="auto",
                     help="after a watchdog/channel pause (connection loss always needs a re-arm)")

@@ -36,6 +36,7 @@ class Calibration:
     created_unix: float
     source: str
     mapping: dict
+    gyr_bias_rads: dict = field(default_factory=dict)  # location -> stationary gyro median, rad/s
     label: str = "EXPERIMENTAL baseline (unloaded, stationary); magnetic change is not force"
     path: str | None = field(default=None, compare=False)
 
@@ -107,22 +108,37 @@ class CalibrationCollector:
                                    f"skipped: {self.skipped or 'none'}")
         pods = self.snaps[0].pods
         f0 = self.snaps[0].frame
-        mag_mean, mag_std, acc_mean, gyr_rms = {}, {}, {}, {}
+        mag_mean, mag_std, acc_mean, gyr_rms, gyr_bias = {}, {}, {}, {}, {}
+
+        def robust_stats(values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+            """Median and Gaussian-equivalent MAD, insensitive to isolated sensor spikes."""
+            center = np.median(values, axis=0)
+            sigma = 1.4826 * np.median(np.abs(values - center), axis=0)
+            # Quantized quiet channels can have MAD=0. Keep a small floor without allowing
+            # one outlier to inflate the accepted calibration noise.
+            sigma = np.maximum(sigma, 1e-6)
+            return center, sigma
+
         for kind, pod in self.mapping.required_channels():
             i = pods.index(pod)
             if kind == "mag":
                 b = np.array([s.mag_raw[i] for s in self.snaps])
-                mag_mean[pod], mag_std[pod] = b.mean(0).tolist(), b.std(0).tolist()
+                center, sigma = robust_stats(b)
+                mag_mean[pod], mag_std[pod] = center.tolist(), sigma.tolist()
                 if max(mag_std[pod]) > self.max_mag_std_ut:
-                    raise CalibrationError(f"{pod} field not steady (std {max(mag_std[pod]):.0f} uT > "
+                    raise CalibrationError(f"{pod} field not steady (robust sigma {max(mag_std[pod]):.0f} uT > "
                                            f"{self.max_mag_std_ut:.0f}); keep the hand still and unloaded")
             else:
                 a = np.array([s.acc_raw[i] for s in self.snaps])
                 w = np.array([s.gyr_raw[i] for s in self.snaps])
-                acc_mean[pod] = a.mean(0).tolist()
-                gyr_rms[pod] = float(np.sqrt((w ** 2).sum(1).mean()))
+                acc_center, _ = robust_stats(a)
+                gyro_center, _ = robust_stats(w)
+                acc_mean[pod] = acc_center.tolist()
+                gyr_bias[pod] = gyro_center.tolist()
+                residual = w - gyro_center
+                gyr_rms[pod] = float(np.sqrt((residual ** 2).sum(1).mean()))
                 if gyr_rms[pod] > self.max_gyro_rms_rads:
-                    raise CalibrationError(f"{pod} moving (gyro rms {gyr_rms[pod]:.2f} rad/s); hold still")
+                    raise CalibrationError(f"{pod} moving (gyro residual rms {gyr_rms[pod]:.2f} rad/s); hold still")
         # tilt needs a rest gravity direction even when only the grip channels are required
         cfg = self.mapping.cfg
         for pod in (*getattr(cfg, "grip_pods", ()), *getattr(cfg, "optional_imu_pods", ())):
@@ -131,8 +147,14 @@ class CalibrationCollector:
             i = pods.index(pod)
             a = np.array([s.acc_raw[i] for s in self.snaps])
             if np.all(np.isfinite(a)):                     # only pods whose IMU was usable throughout
-                acc_mean[pod] = a.mean(0).tolist()
+                acc_mean[pod] = robust_stats(a)[0].tolist()
+                w = np.array([s.gyr_raw[i] for s in self.snaps])
+                if np.all(np.isfinite(w)):
+                    gyro_center = robust_stats(w)[0]
+                    gyr_bias[pod] = gyro_center.tolist()
+                    residual = w - gyro_center
+                    gyr_rms[pod] = float(np.sqrt((residual ** 2).sum(1).mean()))
         pod_ids = {loc: r.pod_id for loc, r in f0.pods.items() if loc in {p for _, p in self.mapping.required_channels()}}
         return Calibration(f0.device_id, f0.config_id, pod_ids, mag_mean, mag_std, acc_mean, gyr_rms,
                            len(self.snaps), round(self.elapsed(), 3), time.time(), f0.source,
-                           self.mapping.cfg.to_dict())
+                           self.mapping.cfg.to_dict(), gyr_bias)

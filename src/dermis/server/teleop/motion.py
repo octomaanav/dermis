@@ -74,6 +74,7 @@ class MotionEstimator:
         self.p = np.zeros(3)
         self._last_t: int | None = None
         self._last_a = np.zeros(3)
+        self._acc_bias = np.zeros(3)
         self._still_t = 0.0
         self.peak = np.zeros(3)              # largest |offset| per axis (inspection)
 
@@ -90,6 +91,7 @@ class MotionEstimator:
             self.p[:] = 0.0
             self._last_t = None
             self._last_a[:] = 0.0
+            self._acc_bias[:] = 0.0
 
     def reference(self):
         return self._ref
@@ -108,7 +110,15 @@ class MotionEstimator:
             t = imu.t_us
             dt = None if self._last_t is None else (t - self._last_t) / 1e6
             self._last_t = t
-            acc, gyr = snap.acc_raw[i], snap.gyr_raw[i]
+            # The telemetry layer already applies a short median window and low-pass filter.
+            # Use those values here so isolated electrical spikes cannot become metres of
+            # double-integrated position error.
+            acc, gyr = snap.acc_filtered[i], snap.gyr_filtered[i]
+            if not (np.all(np.isfinite(acc)) and np.all(np.isfinite(gyr))):
+                self.v[:] = 0.0
+                return
+            bias = np.asarray(getattr(self._ref, "gyr_bias_rads", {}).get(self.pod, [0.0, 0.0, 0.0]))
+            gyr = gyr - bias
             if dt is None or dt <= 0 or dt > self.max_dt:
                 self.v[:] = 0.0                          # gap, restart or clock reset
                 self._last_a[:] = 0.0
@@ -120,8 +130,13 @@ class MotionEstimator:
             if abs(na - G) < 0.1 * G and float(np.linalg.norm(gyr)) < 0.5:      # quasi-static: fix tilt drift
                 up = self.R @ acc
                 self.R = _rot(self.tilt_gain * _align(up, np.array([0.0, 0.0, 1.0]))) @ self.R
-            a = self.R @ acc - np.array([0.0, 0.0, G])
+            residual = self.R @ acc - np.array([0.0, 0.0, G])
             quasi_static = abs(na - G) < 0.05 * G and float(np.linalg.norm(gyr)) < 0.5
+            if quasi_static:
+                # Learn only the small world-frame residual while stationary. This cancels
+                # temperature/bias drift without absorbing deliberate motion.
+                self._acc_bias += min(1.0, dt / 3.0) * (residual - self._acc_bias)
+            a = residual - self._acc_bias
             if quasi_static or float(np.linalg.norm(a)) < self.acc_deadband:
                 a = np.zeros(3)
             still = not a.any() and float(np.linalg.norm(gyr)) < 0.3
@@ -139,3 +154,20 @@ class MotionEstimator:
     def offset(self) -> np.ndarray:
         with self._lock:
             return self.p.copy()
+
+    def orientation_rpy(self) -> np.ndarray:
+        """Filtered full 3-D orientation as roll/pitch/yaw relative to calibration.
+
+        Roll/pitch are gravity-corrected. Yaw comes from the gyro and is necessarily relative
+        and slowly drifting because the glove has no magnetometer heading reference.
+        """
+        with self._lock:
+            R = self.R.copy()
+        pitch = math.asin(float(np.clip(-R[2, 0], -1.0, 1.0)))
+        if abs(math.cos(pitch)) < 1e-6:
+            roll = math.atan2(-R[0, 1], R[1, 1])
+            yaw = 0.0
+        else:
+            roll = math.atan2(R[2, 1], R[2, 2])
+            yaw = math.atan2(R[1, 0], R[0, 0])
+        return np.array([roll, pitch, yaw], dtype=float)

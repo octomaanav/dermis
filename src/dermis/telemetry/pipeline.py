@@ -27,6 +27,7 @@ from __future__ import annotations
 import time
 from collections import deque
 from dataclasses import dataclass, field
+import math
 
 import numpy as np
 
@@ -55,6 +56,7 @@ class Snapshot:
     mag_saturated: np.ndarray
     mag_age_us: np.ndarray
     mag_held: np.ndarray
+    mag_filtered: np.ndarray             # robust median + low-pass value, held for max_hold_us
     mag_held_mask: np.ndarray
     mag_imputed: np.ndarray
     mag_temp_c: np.ndarray           # NaN if missing; temp freshness is separate from field freshness
@@ -68,6 +70,8 @@ class Snapshot:
     imu_age_us: np.ndarray
     acc_held: np.ndarray
     gyr_held: np.ndarray
+    acc_filtered: np.ndarray             # robust median + low-pass value, held for max_hold_us
+    gyr_filtered: np.ndarray
     imu_held_mask: np.ndarray
     imu_imputed: np.ndarray
     lost_before: int                 # frames missing between the previous accepted frame and this one
@@ -85,10 +89,13 @@ class Snapshot:
                 "b_ut": _list(self.mag_raw[i]), "mag_fresh": bool(self.mag_fresh[i]),
                 "mag_stale": bool(self.mag_stale[i]), "mag_valid": bool(self.mag_valid[i]),
                 "mag_age_ms": _ms(self.mag_age_us[i]), "mag_imputed": bool(self.mag_imputed[i]),
+                "b_filtered_ut": _list(self.mag_filtered[i]),
                 "mag_temp_fresh": bool(self.mag_temp_fresh[i]),
                 "acc_mps2": _list(self.acc_raw[i]), "gyr_rads": _list(self.gyr_raw[i]),
                 "imu_fresh": bool(self.imu_fresh[i]), "imu_stale": bool(self.imu_stale[i]),
                 "imu_valid": bool(self.imu_valid[i]), "imu_age_ms": _ms(self.imu_age_us[i]),
+                "acc_filtered_mps2": _list(self.acc_filtered[i]),
+                "gyr_filtered_rads": _list(self.gyr_filtered[i]),
                 "imu_imputed": bool(self.imu_imputed[i]),
             } for i, p in enumerate(self.pods)},
         }
@@ -102,14 +109,50 @@ def _ms(us):
     return None if not np.isfinite(us) else round(float(us) / 1000.0, 3)
 
 
+class _RobustVectorFilter:
+    """Short median window rejects isolated spikes; the EMA removes remaining broadband noise.
+
+    Device timestamps set the low-pass coefficient, so the response is stable across source rates.
+    A real step survives once it occupies a majority of the short window; a one-frame excursion does not.
+    """
+
+    def __init__(self, window: int, tau_s: float):
+        self.history = deque(maxlen=max(1, int(window)))
+        self.tau_s = max(0.0, float(tau_s))
+        self.value: np.ndarray | None = None
+        self.last_us: int | None = None
+
+    def update(self, value: np.ndarray, t_us: int) -> np.ndarray:
+        x = np.asarray(value, dtype=float)
+        self.history.append(x.copy())
+        center = np.median(np.asarray(self.history), axis=0)
+        if self.value is None:
+            self.value = center
+        else:
+            dt = 0.0 if self.last_us is None else max(0.0, min(0.25, (t_us - self.last_us) / 1e6))
+            alpha = 1.0 if self.tau_s == 0.0 else 1.0 - math.exp(-dt / self.tau_s)
+            self.value = self.value + alpha * (center - self.value)
+        self.last_us = t_us
+        return self.value.copy()
+
+    def get(self) -> np.ndarray:
+        return np.full(3, np.nan) if self.value is None else self.value.copy()
+
+
 class TelemetryPipeline:
     def __init__(self, pod_order=DEFAULT_POD_ORDER, max_hold_us: int = 50_000, reorder_window: int = 64,
-                 source_timeout_s: float = 0.25, adapter=adapt_decoded_frame, event_log: int = 200):
+                 source_timeout_s: float = 0.25, adapter=adapt_decoded_frame, event_log: int = 200,
+                 mag_filter_window: int = 5, mag_filter_tau_s: float = 0.08,
+                 imu_filter_window: int = 3, acc_filter_tau_s: float = 0.025,
+                 gyr_filter_tau_s: float = 0.02):
         self.pod_order = tuple(pod_order)
         self.max_hold_us = max_hold_us
         self.reorder_window = reorder_window
         self.source_timeout_s = source_timeout_s
         self.adapter = adapter
+        self.mag_filter_window, self.mag_filter_tau_s = mag_filter_window, mag_filter_tau_s
+        self.imu_filter_window = imu_filter_window
+        self.acc_filter_tau_s, self.gyr_filter_tau_s = acc_filter_tau_s, gyr_filter_tau_s
         self.events: deque = deque(maxlen=event_log)
         self.counters = {k: 0 for k in ("messages", "accepted", "duplicates", "out_of_order", "lost_frames",
                                         "restarts", "device_changes", "config_changes", "adapter_errors",
@@ -133,6 +176,13 @@ class TelemetryPipeline:
         self._acc_last = np.full((P, 3), np.nan)
         self._gyr_last = np.full((P, 3), np.nan)
         self._imu_last_t = np.full(P, -np.inf)
+        self._reset_filters()
+
+    def _reset_filters(self) -> None:
+        P = len(self.pod_order)
+        self._mag_filters = [_RobustVectorFilter(self.mag_filter_window, self.mag_filter_tau_s) for _ in range(P)]
+        self._acc_filters = [_RobustVectorFilter(self.imu_filter_window, self.acc_filter_tau_s) for _ in range(P)]
+        self._gyr_filters = [_RobustVectorFilter(self.imu_filter_window, self.gyr_filter_tau_s) for _ in range(P)]
 
     def reset_stream(self, reason: str) -> None:
         """Forget ordering and held values (new connection, operator request). Counters are kept."""
@@ -198,6 +248,7 @@ class TelemetryPipeline:
             ev.append(self._event("config_change", old=self.config_id, new=f.config_id))
             self._mag_last_t[:] = -np.inf          # values under the old config are not comparable
             self._imu_last_t[:] = -np.inf
+            self._reset_filters()
         self.config_id = f.config_id
         self.last_frame = f.frame
         self.last_t_device_us = f.t_device_us
@@ -251,6 +302,7 @@ class TelemetryPipeline:
                 mag_temp_fresh[i] = m.temp_fresh
                 if m.fresh:
                     self._mag_last[i], self._mag_last_t[i] = m.b_ut, m.t_us
+                    self._mag_filters[i].update(m.b_ut, m.t_us)
             r = pod.imu
             if r is not None:
                 if r.usable:
@@ -260,6 +312,8 @@ class TelemetryPipeline:
                 imu_sat[i] = r.saturated
                 if r.fresh:
                     self._acc_last[i], self._gyr_last[i], self._imu_last_t[i] = r.acc_mps2, r.gyr_rads, r.t_us
+                    self._acc_filters[i].update(r.acc_mps2, r.t_us)
+                    self._gyr_filters[i].update(r.gyr_rads, r.t_us)
         mag_age = np.maximum(0.0, now - self._mag_last_t)
         imu_age = np.maximum(0.0, now - self._imu_last_t)
         mag_hold = mag_age <= self.max_hold_us
@@ -267,10 +321,23 @@ class TelemetryPipeline:
         mag_held = np.where(mag_hold[:, None], self._mag_last, np.nan)
         acc_held = np.where(imu_hold[:, None], self._acc_last, np.nan)
         gyr_held = np.where(imu_hold[:, None], self._gyr_last, np.nan)
-        return Snapshot(f, self.pod_order, present, mag_raw, mag_valid, mag_fresh, mag_stale, mag_sat, mag_age,
-                        mag_held, mag_hold, mag_hold & ~mag_fresh, mag_temp, mag_temp_fresh,
-                        acc_raw, gyr_raw, imu_valid, imu_fresh, imu_stale, imu_sat, imu_age,
-                        acc_held, gyr_held, imu_hold, imu_hold & ~imu_fresh, lost, cfg_changed, ev)
+        mag_filtered = np.array([flt.get() for flt in self._mag_filters])
+        acc_filtered = np.array([flt.get() for flt in self._acc_filters])
+        gyr_filtered = np.array([flt.get() for flt in self._gyr_filters])
+        mag_filtered = np.where(mag_hold[:, None], mag_filtered, np.nan)
+        acc_filtered = np.where(imu_hold[:, None], acc_filtered, np.nan)
+        gyr_filtered = np.where(imu_hold[:, None], gyr_filtered, np.nan)
+        return Snapshot(frame=f, pods=self.pod_order, present=present, mag_raw=mag_raw,
+                        mag_valid=mag_valid, mag_fresh=mag_fresh, mag_stale=mag_stale,
+                        mag_saturated=mag_sat, mag_age_us=mag_age, mag_held=mag_held,
+                        mag_filtered=mag_filtered, mag_held_mask=mag_hold,
+                        mag_imputed=mag_hold & ~mag_fresh, mag_temp_c=mag_temp,
+                        mag_temp_fresh=mag_temp_fresh, acc_raw=acc_raw, gyr_raw=gyr_raw,
+                        imu_valid=imu_valid, imu_fresh=imu_fresh, imu_stale=imu_stale,
+                        imu_saturated=imu_sat, imu_age_us=imu_age, acc_held=acc_held,
+                        gyr_held=gyr_held, acc_filtered=acc_filtered, gyr_filtered=gyr_filtered,
+                        imu_held_mask=imu_hold, imu_imputed=imu_hold & ~imu_fresh,
+                        lost_before=lost, config_changed=cfg_changed, events=ev)
 
     def source_stale(self, now_ns: int | None = None) -> bool:
         """True when nothing has been accepted for source_timeout_s of host time."""

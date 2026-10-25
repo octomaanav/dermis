@@ -47,6 +47,24 @@ def test_draft_record_missing_required_keys_is_dropped(decoded_frame):
     assert any("record dropped" in n for n in notes)
 
 
+def test_live_v0_shape_uses_single_top_level_palm_imu(decoded_frame):
+    f = copy.deepcopy(decoded_frame)
+    palm_imu = copy.deepcopy(f["pods"]["thenar_apb"]["imu"])
+    palm_imu.update(imu_id="IMU-0001", flags=["SPI_ERROR"], valid=False)
+    for pod in f["pods"].values():
+        pod.pop("imu", None)
+    f.update(config_id="dermis-4mlx-1imu-force-provisional-v1", flags=["SENSOR_ERROR"], imu=palm_imu)
+    f["pods"]["index_tip"]["mag"]["flags"] = ["SATURATED", "FORCE_PROVISIONAL"]
+
+    g, notes = normalize_frame(f)
+    assert schema_errors(g) == []
+    assert isinstance(g["config_id"], int) and g["flags"] == [] and "imu" not in g
+    assert g["pods"]["wrist"]["pod_id"] == "IMU-0001"
+    assert g["pods"]["wrist"]["imu"]["flags"] == ["COMM_FAIL"]
+    assert g["pods"]["index_tip"]["mag"]["flags"] == ["RAIL"]
+    assert any("top-level v0 palm IMU" in n for n in notes)
+
+
 class Feed:
     def __init__(self, fmt="v1", stationary_s=1.0, assume_valid=False):
         self.gen = SyntheticGlove(stationary_s=stationary_s, noise_ut=2.0)
@@ -80,11 +98,27 @@ def test_hand_mapping_claws_and_palm_source(fmt, assume_valid, palm_from):
     outs = [m.evaluate(feed.snap(t=t), cal) for t in np.arange(1.0, 7.0, 0.1)]
     assert all(o.usable for o in outs)
     flex = np.array([o.flex for o in outs])
-    assert np.all((flex >= 0) & (flex <= 1)) and np.ptp(flex, axis=0).min() > 0.8   # every claw moves 0..1
-    assert np.abs(flex[:, 1] - flex[:, 2]).max() > 0.3                              # middle lags index
+    assert np.all((flex >= 0) & (flex <= 1))
+    assert np.ptp(flex[:, :2], axis=0).min() > 0.8                                  # thumb + index pinch
+    assert np.abs(flex[:, 2]).max() == 0.0                                           # untouched middle stays still
     assert {o.signals["palm_from"] for o in outs} == {palm_from}
     rp = np.array([o.attitude for o in outs])
     assert np.abs(rp).max() <= m.cfg.max_tilt_rad and np.ptp(rp, axis=0).max() > 0.1
+
+
+def test_single_pad_never_curls_without_thumb_contact():
+    feed = Feed()
+    m = HandMapping()
+    cal = calibrated(feed, m)
+    feed.gen.peak_dbz["thumb_tip"] = 0.0
+    isolated = [m.evaluate(feed.snap(t=t), cal) for t in np.arange(2.5, 3.25, 1 / 30)]
+    assert any(o.signals["contact"]["index_tip"] for o in isolated)
+    assert all(o.flex == [0.0, 0.0, 0.0] for o in isolated)
+
+    feed.gen.peak_dbz["thumb_tip"] = 7000.0
+    paired = [m.evaluate(feed.snap(t=t), cal) for t in np.arange(2.7, 3.15, 1 / 30)]
+    assert max(o.flex[0] for o in paired) > 0.5 and max(o.flex[1] for o in paired) > 0.5
+    assert all(o.flex[2] == 0.0 for o in paired)
 
 
 def test_hand_holds_only_the_bad_claw_and_pauses_on_watchdog():

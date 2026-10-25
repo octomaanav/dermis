@@ -1,15 +1,41 @@
 # Dermis v0 firmware
 
-The active `src/main.cpp` is the ESP32-S3 firmware for four MLX90393
-magnetometers and one BMI160. It creates the WPA2 Wi-Fi hotspot
-`Dermis-Glove` (password `dermis-demo`) and serves JSON frames over WebSocket
-at `ws://192.168.4.1:81/ws`, at 10 Hz. Join that hotspot from the Mac, then run
-`tools/wifi_receive.py` to record the decoded frames and optionally forward
-them to the local simulator. The ESP is the server, so it never needs the
-Mac's IP address. Change the demo password in `src/main.cpp` before a public
-deployment. The older interactive MLX/HX711
-bring-up harness is retained under `mlx_firmware/`; the command-menu sections
-below describe that archived harness.
+## Live glove dashboard
+
+The dependency-free dashboard connects directly to the glove WebSocket, uses the physical
+S1/S2/S3/S4 mapping, performs a robust unloaded zero capture, filters spikes, shows per-patch
+force/temperature/contact/pressure/slip estimates and palm IMU data, and exports raw JSONL plus
+derived CSV. Start it from `firmware/v0`:
+
+```bash
+source .venv/bin/activate
+python dashboard/serve.py --port 8080
+open http://127.0.0.1:8080
+```
+
+Join the glove access point first. The default stream is `ws://192.168.4.1:81/ws`. Keep every
+patch unloaded and the glove still during the first 5 seconds after connecting while the firmware
+captures its live magnetic tare and the dashboard measures its noise floors. The source
+assigner defaults to the verified physical map: S1 palm, S2 middle, S3 thumb, S4 index.
+
+Force uses a two-point calibration for each installed patch because the unloaded magnetic vector
+depends on magnet placement and cannot safely be reused from another assembly. After the unloaded
+zero completes, apply a known load (measured with the HX711/load cell) to **one patch only**, enter
+that load in the source assigner, click `Capture loaded span`, and hold it steady for three seconds.
+Repeat for S1-S4. The span direction and N/µT gain are retained in ESP32 NVS; the unloaded zero is
+captured again at each boot or whenever `Calibrate zero` is pressed. Until a channel has both a
+valid zero and span, its JSON force is `null` and carries `FORCE_SPAN_REQUIRED` rather than a
+misleading `0 N`.
+
+Pressure uses the editable patch area. Slip risk is a magnetic-motion/unloading heuristic, not a
+direct shear-force measurement. `force_n` is consumed exactly from the firmware JSON; clamped
+values are prominently flagged because no dashboard can reconstruct force beyond that ceiling.
+
+The active `src/main.cpp` is ESP32-S3 Wi-Fi firmware for four MLX90393
+magnetometers and one palm-mounted BMI160. It creates a `Dermis-S3-…` access
+point and streams one JSON frame at 10 Hz from `ws://192.168.4.1:81/ws`.
+The older interactive MLX/HX711 bring-up harness is retained under
+`mlx_firmware/`; the command-menu sections below describe that archived harness.
 
 This is a PlatformIO/Arduino bench harness for four MLX90393 magnetometers on one ESP32-S3 SPI bus. It provides probe, isolation, configuration, noise, streaming, rate-sweep, and temperature commands plus Python logging, plotting, and analysis tools.
 
@@ -176,3 +202,4 @@ This prints per-axis statistics, interval/jitter statistics, estimated drops, sa
 ## Datasheet uncertainty
 
 The field scale, status layout, commands, 10 MHz SPI maximum, conversion timing, and temperature conversion come from Melexis MLX90393 datasheet revision 012. Temperature in °C uses the *typical* 46244 LSB at 25 °C and 45.2 LSB/°C values, so it is useful for diagnostics, not precision thermometry. Without hardware attached here, actual frame rate, signal/noise, isolation behavior, and sensor ordering codes remain to be measured on the bench.
+

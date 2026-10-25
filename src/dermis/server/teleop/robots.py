@@ -137,9 +137,10 @@ class HandRobot(_Base):
         m = self.sim.measure()
         q = np.degrees(m["joints"][0::3])
         fingers = " ".join(f"{pod.split('_')[0]} {a:+.0f}°" for pod, a in zip(self.sim.pods, q))
-        r, pch = np.degrees(m["palm_rp"])
+        r, pch, y = np.degrees(m["palm_rpy"])
         dx, dy, dz = (100 * np.array(m["offset"])).tolist()
-        return f"fingers {fingers} | tilt roll {r:+.0f}° pitch {pch:+.0f}° | hand offset ({dx:+.0f},{dy:+.0f},{dz:+.0f}) cm"
+        return (f"fingers {fingers} | palm RPY {r:+.0f}° {pch:+.0f}° {y:+.0f}° | "
+                f"hand offset ({dx:+.0f},{dy:+.0f},{dz:+.0f}) cm")
 
     def show_status(self, signals: dict) -> None:
         self.sim.show_status(signals.get("status", {}))

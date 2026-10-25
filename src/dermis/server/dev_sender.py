@@ -131,7 +131,10 @@ class SyntheticGlove:
         self.stationary_s, self.grip_period_s, self.tilt = stationary_s, grip_period_s, tilt
         self.noise_ut = noise_ut
         self.rng = random.Random(seed)
-        self.peak_dbz = {"index_tip": 8000.0, "thumb_tip": 7000.0, "middle_tip": 7500.0}
+        # The default demonstration is an index/thumb pinch. A punch intentionally closes
+        # all three digits; updown intentionally closes none.
+        self.peak_dbz = {"index_tip": 8000.0, "thumb_tip": 7000.0,
+                         "middle_tip": 7500.0 if profile == "punch" else 0.0}
         self.lag_s = {"middle_tip": 1.0}
         b = self.base
         self._mag_off = {k: p["mag"]["t_us"] - b["t_device_us"] for k, p in b["pods"].items() if p["mag"]}

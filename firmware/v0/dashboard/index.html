@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Dermis Glove Lab</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="brand"><span>DERMIS</span><small>GLOVE LAB</small></div>
+    <div class="connection"><i id="statusDot"></i><b id="statusText">Offline</b><span id="rateText">0.0 Hz</span></div>
+    <label class="url"><span>Glove WebSocket</span><input id="wsUrl" value="ws://192.168.4.1:81/ws"></label>
+    <button id="connectBtn" class="primary">Connect</button>
+    <button id="calibrateBtn">Calibrate zero</button>
+    <button id="recordBtn" class="recording">● Recording</button>
+  </header>
+
+  <main>
+    <section class="overview">
+      <article class="panel hand-panel">
+        <div class="panel-title"><div><span>TACTILE MAP</span><small>force core · temperature ring</small></div><b id="calState">uncalibrated</b></div>
+        <svg id="hand" viewBox="0 0 400 640" aria-label="Palm-side glove patch map">
+          <defs>
+            <filter id="softGlow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+            <filter id="handShadow" x="-30%" y="-20%" width="160%" height="150%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#000" flood-opacity=".46"/></filter>
+            <linearGradient id="gloveMaterial" x1=".1" y1="0" x2=".9" y2="1"><stop stop-color="#263443"/><stop offset=".48" stop-color="#1b2632"/><stop offset="1" stop-color="#111923"/></linearGradient>
+            <linearGradient id="cuffMaterial" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#111923"/><stop offset=".5" stop-color="#223140"/><stop offset="1" stop-color="#101720"/></linearGradient>
+            <radialGradient id="palmLight" cx="42%" cy="26%" r="75%"><stop stop-color="#314154" stop-opacity=".7"/><stop offset="1" stop-color="#141d27" stop-opacity="0"/></radialGradient>
+            <pattern id="weave" width="8" height="8" patternUnits="userSpaceOnUse"><path d="M0 1h8M1 0v8" stroke="#a9bdd2" stroke-opacity=".035" stroke-width=".7"/></pattern>
+          </defs>
+          <g class="glove-body" filter="url(#handShadow)">
+            <path class="cuff" d="M137 526 L263 526 L254 626 L146 626 Z"/>
+            <path class="finger index-finger" d="M101 308 L77 153 C73 122 88 100 110 96 C133 93 146 112 144 141 L145 300 Z"/>
+            <path class="finger middle-finger" d="M153 296 L154 82 C154 48 171 28 194 28 C217 28 231 49 227 82 L212 302 Z"/>
+            <path class="finger ring-finger" d="M218 307 L228 124 C230 94 246 76 267 78 C289 80 300 100 295 129 L273 327 Z"/>
+            <path class="finger little-finger" d="M275 332 L294 181 C298 153 314 138 333 142 C352 146 358 166 352 193 L321 354 Z"/>
+            <path class="thumb" d="M126 337 C101 321 78 295 55 268 C41 251 21 249 9 264 C-2 280 3 299 18 315 L81 387 C98 406 118 408 136 392 Z"/>
+            <path class="palm" d="M111 281 C145 260 178 252 214 257 C253 260 284 272 310 290 L326 440 C331 487 310 527 271 554 L262 578 L137 578 L128 553 C94 526 76 488 79 444 L88 330 C91 307 99 291 111 281 Z"/>
+            <path class="palm-light" d="M111 281 C145 260 178 252 214 257 C253 260 284 272 310 290 L326 440 C331 487 310 527 271 554 L262 578 L137 578 L128 553 C94 526 76 488 79 444 L88 330 C91 307 99 291 111 281 Z"/>
+            <path class="weave" d="M111 281 C145 260 178 252 214 257 C253 260 284 272 310 290 L326 440 C331 487 310 527 271 554 L262 578 L137 578 L128 553 C94 526 76 488 79 444 L88 330 C91 307 99 291 111 281 Z"/>
+            <g class="seams">
+              <path d="M84 205 Q112 197 143 202 M157 179 Q191 173 224 180 M225 202 Q259 196 291 208 M289 242 Q321 241 346 252"/>
+              <path d="M105 305 Q201 269 304 305 M97 360 Q126 378 140 410 M256 326 Q286 354 294 398"/>
+              <path d="M145 548 L149 612 M254 548 L250 612"/>
+            </g>
+            <g class="sensor-traces">
+              <path d="M110 133 C111 210 132 263 156 326 C171 365 187 384 205 404"/>
+              <path d="M194 71 C194 166 198 257 203 326 L205 404"/>
+              <path d="M53 282 C98 318 145 365 205 404"/>
+              <path d="M205 404 L205 497"/>
+            </g>
+            <text class="cuff-brand" x="200" y="608">DERMIS</text>
+          </g>
+          <g class="patch fingertip" data-patch="index" transform="translate(110 133)"><circle class="temp-ring" r="27"/><circle class="sensor-shell" r="22"/><circle class="force-halo" r="19"/><circle class="force-core" r="16"/><circle class="sensor-detail" r="11"/><text y="-3">INDEX</text><text class="reading" y="12">— N</text><text class="source" y="40">S4</text></g>
+          <g class="patch fingertip" data-patch="middle" transform="translate(194 71)"><circle class="temp-ring" r="27"/><circle class="sensor-shell" r="22"/><circle class="force-halo" r="19"/><circle class="force-core" r="16"/><circle class="sensor-detail" r="11"/><text y="-3">MIDDLE</text><text class="reading" y="12">— N</text><text class="source" y="40">S2</text></g>
+          <g class="patch" data-patch="thumb" transform="translate(53 282)"><circle class="temp-ring" r="29"/><circle class="sensor-shell" r="24"/><circle class="force-halo" r="21"/><circle class="force-core" r="18"/><circle class="sensor-detail" r="12"/><text y="-3">THUMB</text><text class="reading" y="13">— N</text><text class="source" y="43">S3</text></g>
+          <g class="patch palm-patch" data-patch="palm" transform="translate(205 404)"><circle class="temp-ring" r="38"/><circle class="sensor-shell" r="32"/><circle class="force-halo" r="28"/><circle class="force-core" r="24"/><circle class="sensor-detail" r="17"/><text y="-3">PALM</text><text class="reading" y="14">— N</text><text class="source" y="53">S1</text></g>
+          <g class="imu-node" transform="translate(205 497)"><rect x="-24" y="-20" width="48" height="40" rx="9"/><circle r="11"/><path d="M-15 0h30M0 -15v30"/><text y="36">PALM IMU</text></g>
+        </svg>
+        <div class="legend"><span><i class="force"></i>force / contact</span><span><i class="hot"></i>≥ +5°C</span><span><i class="cold"></i>≤ −5°C</span></div>
+      </article>
+
+      <section class="right-grid">
+        <div class="summary-grid">
+          <article class="stat"><span>Total force</span><b id="totalForce">—</b><small>N, zero corrected</small></article>
+          <article class="stat"><span>Active patches</span><b id="contacts">0 / 4</b><small>calibrated force contact</small></article>
+          <article class="stat"><span>Peak slip risk</span><b id="peakSlip">—</b><small>heuristic, not measured shear</small></article>
+          <article class="stat"><span>Stream quality</span><b id="quality">—</b><small id="qualitySub">waiting for frames</small></article>
+        </div>
+
+        <article class="panel patches-panel">
+          <div class="panel-title"><div><span>PATCH TELEMETRY</span><small>filtered values and derived estimates</small></div></div>
+          <div id="patchCards" class="patch-cards"></div>
+        </article>
+
+        <article class="panel imu-panel">
+          <div class="panel-title"><div><span>PALM IMU</span><small>single BMI160 · filtered · orientation relative to zero</small></div><span id="imuQuality" class="badge">NO DATA</span></div>
+          <div class="imu-grid">
+            <div><span>Orientation R / P / Y</span><b id="rpy">—</b><small>degrees; yaw is relative and drifts</small></div>
+            <div><span>Acceleration X / Y / Z</span><b id="acc">—</b><small>m/s²</small></div>
+            <div><span>Gyroscope X / Y / Z</span><b id="gyro">—</b><small>rad/s, bias corrected</small></div>
+            <div><span>Motion intensity</span><b id="motion">—</b><small>|a|−g and angular speed</small></div>
+          </div>
+        </article>
+      </section>
+    </section>
+
+    <section class="charts-grid">
+      <article class="panel chart"><div class="panel-title"><div><span>CALIBRATED FORCE</span><small>last 30 s · `force_n` from JSON, robustly filtered</small></div></div><canvas id="forceChart"></canvas></article>
+      <article class="panel chart"><div class="panel-title"><div><span>SLIP-RISK HEURISTIC</span><small>field motion + unloading; validate before safety use</small></div></div><canvas id="slipChart"></canvas></article>
+      <article class="panel chart"><div class="panel-title"><div><span>PALM ORIENTATION</span><small>roll / pitch / relative yaw, degrees</small></div></div><canvas id="imuChart"></canvas></article>
+    </section>
+
+    <section class="bottom-grid">
+      <article class="panel">
+        <div class="panel-title"><div><span>SOURCE ASSIGNER</span><small>assign each physical MLX channel to one glove patch</small></div><button id="resetAssign">Restore physical map</button></div>
+        <div id="assigner" class="assigner"></div>
+        <p class="note">Default physical map: S1 → palm, S2 → middle, S3 → thumb, S4 → index. First capture unloaded zero. Then apply a measured load to only one patch, keep it steady, and press that source’s loaded-span button. Repeat for all four. Span coefficients persist in the glove; the unloaded zero is refreshed each session.</p>
+      </article>
+      <article class="panel">
+        <div class="panel-title"><div><span>SESSION & EXPORT</span><small>raw frames and derived values stay local</small></div></div>
+        <div class="actions">
+          <button id="exportJson">Export raw JSONL</button><button id="exportCsv">Export derived CSV</button><button id="clearLog" class="danger">Clear log</button>
+          <label class="file">Replay JSONL<input id="replayFile" type="file" accept=".jsonl,.json"></label>
+        </div>
+        <div class="session-grid"><div><span>Frames</span><b id="frameCount">0</b></div><div><span>Dropped IDs</span><b id="dropCount">0</b></div><div><span>Interval jitter</span><b id="jitter">—</b></div><div><span>Log size</span><b id="logSize">0 B</b></div></div>
+        <div id="alerts" class="alerts"><div class="quiet">No alerts yet.</div></div>
+      </article>
+    </section>
+  </main>
+  <div id="toast"></div>
+  <script src="derivations.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
