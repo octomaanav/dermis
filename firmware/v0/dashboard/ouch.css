@@ -1,0 +1,26 @@
+#ouchWrap{display:flex;align-items:center;gap:6px;padding:3px 4px 3px 3px;background:var(--panel2);border-radius:10px}
+#ouchBtn{display:flex;align-items:center;gap:7px;font-weight:800;letter-spacing:.05em}#ouchBtn b{font-size:10px;padding:2px 6px;border-radius:5px;background:#293342;color:var(--muted);letter-spacing:.08em}
+#ouchBtn.armed{background:#4a1118;border-color:#f04455;color:#ffd3d8;animation:armPulse 1s ease-in-out infinite}#ouchBtn.armed b{background:#f04455;color:#fff}
+.ouch-force{display:flex;align-items:center;gap:3px;color:var(--muted);font-size:11px}.ouch-force input{width:44px;background:#0a1017;border:1px solid var(--line);border-radius:6px;padding:5px;font-size:12px;text-align:center}#ouchTest{padding:5px 8px;font-size:11px}
+@keyframes armPulse{50%{box-shadow:0 0 0 4px rgba(240,68,85,.28),0 0 18px rgba(240,68,85,.5)}}
+#ouch{position:fixed;inset:0;z-index:100;display:grid;place-items:center;overflow:hidden;cursor:pointer;
+ background:radial-gradient(circle at 50% 50%,#ff3b4d 0,#d4162a 45%,#7a0614 100%)}
+#ouch[hidden]{display:none}#ouch.in{animation:flash .5s steps(2) 3,fadeIn .12s ease-out}#ouch.out{animation:fadeOut .7s ease-in forwards}
+#ouch:before{content:"";position:absolute;inset:-50%;background:repeating-conic-gradient(from 0deg,rgba(255,255,255,.14) 0 6deg,transparent 6deg 14deg);animation:spin 5s linear infinite}
+#ouch .burst{position:relative;text-align:center;transform:rotate(-6deg);animation:pop .55s cubic-bezier(.2,2,.4,1) both}
+#ouch h1{margin:0;font:900 clamp(80px,22vw,320px)/.9 "Impact","Arial Black",sans-serif;color:#fff;letter-spacing:.02em;
+ -webkit-text-stroke:clamp(4px,.8vw,12px) #1a0207;paint-order:stroke fill;text-shadow:10px 10px 0 #1a0207,0 0 60px rgba(255,255,255,.5);animation:wobble .25s ease-in-out infinite alternate}
+#ouch .hand{display:block;font-size:clamp(60px,12vw,180px);animation:squish .5s ease-in-out infinite alternate;filter:drop-shadow(0 8px 0 rgba(0,0,0,.35))}
+#ouch .info{display:inline-block;margin-top:18px;padding:8px 18px;background:#1a0207;color:#ffd3d8;border-radius:99px;font:700 clamp(13px,1.6vw,22px)/1.2 ui-monospace,monospace;letter-spacing:.06em;transform:rotate(3deg)}
+#ouch .sub{margin-top:10px;color:#fff;font:800 clamp(16px,2.4vw,34px) "Comic Sans MS","Marker Felt",sans-serif;text-shadow:3px 3px 0 #1a0207}
+#ouch .star{position:absolute;font-size:clamp(28px,5vw,70px);animation:fly 1.6s ease-out infinite}
+#ouch .star:nth-child(1){left:12%;top:18%}#ouch .star:nth-child(2){right:10%;top:14%;animation-delay:.2s}#ouch .star:nth-child(3){left:8%;bottom:16%;animation-delay:.5s}#ouch .star:nth-child(4){right:14%;bottom:12%;animation-delay:.8s}#ouch .star:nth-child(5){left:46%;top:6%;animation-delay:.35s}
+body.ouch-shake main,body.ouch-shake header{animation:shake .12s linear infinite}
+@keyframes pop{from{transform:scale(.1) rotate(-30deg);opacity:0}to{transform:scale(1) rotate(-6deg);opacity:1}}
+@keyframes wobble{from{transform:rotate(-2deg) scale(1)}to{transform:rotate(2deg) scale(1.05)}}
+@keyframes squish{from{transform:scale(1,1)}to{transform:scale(1.25,.7)}}
+@keyframes flash{50%{filter:brightness(1.6) saturate(1.4)}}@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fly{0%{transform:translateY(0) rotate(0) scale(.6);opacity:0}30%{opacity:1}100%{transform:translateY(-60px) rotate(40deg) scale(1.3);opacity:0}}
+@keyframes shake{25%{transform:translate(5px,-4px)}50%{transform:translate(-5px,4px)}75%{transform:translate(4px,5px)}}
+@keyframes fadeIn{from{opacity:0}}@keyframes fadeOut{to{opacity:0;transform:scale(1.08)}}
+@media(prefers-reduced-motion:reduce){#ouch:before,#ouch h1,#ouch .hand,#ouch .star,body.ouch-shake main,body.ouch-shake header{animation:none}}

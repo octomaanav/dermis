@@ -15,6 +15,8 @@ constexpr float FORCE_ZERO_MAX_FIELD_STD_UT = 80.0f, FORCE_ZERO_MAX_TEMP_STD_C =
 constexpr float FORCE_SPAN_MIN_UT = 250.0f, FORCE_DEADBAND_N = 0.08f;
 constexpr char AP_PASSWORD[] = "Dermis2026!";
 constexpr uint16_t WS_PORT = 81;
+constexpr uint8_t AP_MAX_STATIONS = 2;  // WiFi stations allowed on the AP
+constexpr uint8_t WS_MAX_CLIENTS = 2;   // must equal WEBSOCKETS_SERVER_CLIENT_MAX in platformio.ini
 constexpr uint8_t SM = 0x30, RM = 0x40, TXYZ = 0x0F;
 constexpr float MAX_CALIBRATED_FORCE_N = 9.80665f;
 // Physical glove map (SPI sensor order): S1 palm, S2 middle, S3 thumb, S4 index.
@@ -29,6 +31,7 @@ Preferences preferences;
 char uid[32], json[2300];
 uint32_t frame=0, sent=0, dropped=0, errors=0, clients=0, last_log=0;
 char ap_ssid[32];
+bool ws_on[WS_MAX_CLIENTS]{};uint32_t ws_order[WS_MAX_CLIENTS]{},ws_seq=0;
 int64_t next_frame=0;
 
 struct Mag { float x,y,z,t; int64_t us; uint8_t status=0xFF; bool valid=false,sat=false,sed=false; };
@@ -205,13 +208,57 @@ size_t makeJson(const Mag m[],const Imu&i,int64_t now){
   if(!imu_ok){JsonObject diag=x["diag"].to<JsonObject>();diag["chip_id"]=imu_chip_id;diag["pmu_status"]=imu_pmu;diag["error_reg"]=imu_error;diag["accel_ready"]=imu_accel_ready;diag["gyro_ready"]=imu_gyro_ready;}
   return serializeJson(d,json,sizeof(json));
 }
+void sendCalibration(uint8_t client){
+  JsonDocument d;d["type"]="calibration";d["schema"]=1;d["device_id"]=uid;
+  JsonArray a=d["spans"].to<JsonArray>();
+  for(size_t n=0;n<SENSOR_COUNT;n++){
+    const auto&sp=force_span[n];JsonObject e=a.add<JsonObject>();e["ch"]=n;e["ready"]=sp.ready;
+    if(sp.ready){JsonArray u=e["unit"].to<JsonArray>();u.add(sp.unit[0]);u.add(sp.unit[1]);u.add(sp.unit[2]);e["gain_n_per_ut"]=sp.gain_n_per_ut;e["reference_n"]=sp.reference_n;}
+  }
+  char buf[900];const size_t n=serializeJson(d,buf,sizeof(buf));if(n&&n<sizeof(buf))web_socket.sendTXT(client,(uint8_t*)buf,n);
+}
+// The primary is the longest-connected client; only it may change configuration (tare/span).
+// If it leaves, the remaining client is promoted.
+int primaryClient(){int best=-1;for(uint8_t i=0;i<WS_MAX_CLIENTS;i++)if(ws_on[i]&&(best<0||ws_order[i]<ws_order[best]))best=i;return best;}
+void logClients(){
+  const int p=primaryClient();
+  Serial.printf("WS clients=%lu primary=%s",(unsigned long)clients,p<0?"none":"");
+  if(p>=0)Serial.printf("#%d %s",p,web_socket.remoteIP(p).toString().c_str());
+  for(uint8_t i=0;i<WS_MAX_CLIENTS;i++)if(ws_on[i]&&(int)i!=p)Serial.printf(" viewer=#%u %s",i,web_socket.remoteIP(i).toString().c_str());
+  Serial.println();
+}
 void wsEvent(uint8_t client,WStype_t type,uint8_t *payload,size_t length){
-  if(type==WStype_CONNECTED){String path((char*)payload,length);clients++;Serial.printf("WS connected path=%s clients=%lu\n",path.c_str(),(unsigned long)clients);}
-  else if(type==WStype_DISCONNECTED){if(clients)clients--;Serial.printf("WS disconnected clients=%lu\n",(unsigned long)clients);}
+  if(type==WStype_CONNECTED){
+    String path((char*)payload,length);
+    if(client<WS_MAX_CLIENTS){ws_on[client]=true;ws_order[client]=++ws_seq;}
+    clients=web_socket.connectedClients();
+    Serial.printf("WS connected #%u %s path=%s role=%s\n",client,web_socket.remoteIP(client).toString().c_str(),path.c_str(),primaryClient()==(int)client?"PRIMARY":"viewer");logClients();
+  }
+  else if(type==WStype_DISCONNECTED){
+    const bool was_primary=primaryClient()==(int)client;
+    if(client<WS_MAX_CLIENTS)ws_on[client]=false;
+    clients=web_socket.connectedClients();
+    Serial.printf("WS disconnected #%u%s\n",client,was_primary?" (was PRIMARY)":"");logClients();
+  }
   else if(type==WStype_TEXT){
     JsonDocument command;
     if(deserializeJson(command,payload,length)!=DeserializationError::Ok)return;
     const char*cmd=command["cmd"]|"";
+    if(strcmp(cmd,"get_cal")==0){sendCalibration(client);return;}   // read-only: any client
+    if(primaryClient()!=(int)client){Serial.printf("Rejected '%s' from viewer #%u %s: only the primary client can edit config\n",cmd,client,web_socket.remoteIP(client).toString().c_str());return;}
+    if(strcmp(cmd,"set_cal")==0){
+      size_t applied=0;
+      for(JsonObject e:command["spans"].as<JsonArray>()){
+        const int ch=e["ch"]|-1;const float gain=e["gain_n_per_ut"]|NAN,ref=e["reference_n"]|NAN;JsonArray u=e["unit"];
+        if(ch<0||ch>=(int)SENSOR_COUNT||u.size()!=3||!e["ready"].as<bool>())continue;
+        const float ux=u[0]|NAN,uy=u[1]|NAN,uz=u[2]|NAN,norm=sqrtf(ux*ux+uy*uy+uz*uz);
+        if(!isfinite(norm)||norm<0.98f||norm>1.02f||!isfinite(gain)||gain<=0||gain>.1f||!isfinite(ref)||ref<=0||ref>MAX_CALIBRATED_FORCE_N)continue;
+        auto&sp=force_span[ch];sp.unit[0]=ux;sp.unit[1]=uy;sp.unit[2]=uz;sp.gain_n_per_ut=gain;sp.reference_n=ref;sp.ready=true;sp.capturing=false;sp.unstable=false;applied++;
+      }
+      if(applied)saveForceSpans();
+      Serial.printf("Calibration import by primary #%u: %u/%u spans applied\n",client,(unsigned)applied,(unsigned)SENSOR_COUNT);
+      sendCalibration(client);return;
+    }
     if(strcmp(cmd,"tare")==0){
       resetForceZero();Serial.printf("Force tare requested by WS client %u: keep every patch unloaded for %u samples\n",client,FORCE_ZERO_SAMPLES);
     }else if(strcmp(cmd,"span")==0){
@@ -225,10 +272,10 @@ void wsEvent(uint8_t client,WStype_t type,uint8_t *payload,size_t length){
 void startNetwork(){
   const IPAddress ip(192,168,4,1),gateway(192,168,4,1),subnet(255,255,255,0);
   WiFi.mode(WIFI_AP);WiFi.setSleep(false);WiFi.softAPConfig(ip,gateway,subnet);
-  const bool started=WiFi.softAP(ap_ssid,AP_PASSWORD,6,false,1);
+  const bool started=WiFi.softAP(ap_ssid,AP_PASSWORD,6,false,AP_MAX_STATIONS);
   Serial.printf("Hotspot: %s (%s)\n",started?"READY":"FAILED",ap_ssid);
   Serial.printf("Password: %s\nIP: %s\nWebSocket: ws://%s:%u/ws\n",AP_PASSWORD,WiFi.softAPIP().toString().c_str(),WiFi.softAPIP().toString().c_str(),WS_PORT);
-  web_socket.begin();web_socket.onEvent(wsEvent);
+  web_socket.begin();web_socket.onEvent(wsEvent);web_socket.enableHeartbeat(10000,3000,2);  // drop dead clients so they free a slot
 }
 }
 void setup(){
@@ -242,5 +289,5 @@ void loop(){
   int64_t now=esp_timer_get_time();if(now>=next_frame){next_frame+=PERIOD_US;if(now-next_frame>(int64_t)PERIOD_US)next_frame=now+PERIOD_US;
     Mag m[SENSOR_COUNT]{};Imu i{};readMlx(m);readImu(i);bool bad=!i.valid;for(const auto&v:m)bad|=!v.valid;if(bad)errors++;
     size_t n=makeJson(m,i,now);if(n&&n<sizeof(json)){if(clients){web_socket.broadcastTXT((uint8_t*)json,n);sent++;}}else dropped++;frame++;}
-  if(millis()-last_log>=5000){Serial.printf("WS frames=%lu clients=%lu stations=%u dropped=%lu sensor_errors=%lu\n",(unsigned long)sent,(unsigned long)clients,WiFi.softAPgetStationNum(),(unsigned long)dropped,(unsigned long)errors);last_log=millis();}
+  if(millis()-last_log>=5000){Serial.printf("WS frames=%lu clients=%lu stations=%u dropped=%lu sensor_errors=%lu\n",(unsigned long)sent,(unsigned long)clients,WiFi.softAPgetStationNum(),(unsigned long)dropped,(unsigned long)errors);logClients();last_log=millis();}
 }

@@ -1,0 +1,142 @@
+{
+  "kind": "dermis-calibration",
+  "version": 1,
+  "exported_at": "2026-10-25T06:19:37.813Z",
+  "device_id": "DERMIS-74DFAEB1E590",
+  "assignments": {
+    "0": "palm",
+    "1": "middle",
+    "2": "thumb",
+    "3": "index"
+  },
+  "areas": {
+    "palm": 2.2,
+    "middle": 1,
+    "thumb": 1.1,
+    "index": 1
+  },
+  "references": {
+    "0": 5,
+    "1": 5,
+    "2": 5,
+    "3": 5
+  },
+  "baseline": {
+    "0": {
+      "b": [
+        965.2359929344941,
+        -2200.404350770289,
+        10070.900519291334
+      ],
+      "noiseUt": 33.38783107402111,
+      "force": 0.000018103887516832724,
+      "temp": 23.535406518555117,
+      "highFraction": 0,
+      "forceUsable": true,
+      "fieldRateFloorUtS": 368.46798174599223,
+      "forceRateFloorNS": 0.2
+    },
+    "1": {
+      "b": [
+        -608.9369781655244,
+        -506.90181047759324,
+        -4979.586801450328
+      ],
+      "noiseUt": 23.563091589104136,
+      "force": 0,
+      "temp": 25.58716271099445,
+      "highFraction": 0,
+      "forceUsable": true,
+      "fieldRateFloorUtS": 220.08328030482076,
+      "forceRateFloorNS": 0.2
+    },
+    "2": {
+      "b": [
+        2362.5923729205138,
+        -398.9408637276377,
+        8897.49571342996
+      ],
+      "noiseUt": 24.940653482651122,
+      "force": 0,
+      "temp": 23.102903324989608,
+      "highFraction": 0,
+      "forceUsable": true,
+      "fieldRateFloorUtS": 148.73422742657567,
+      "forceRateFloorNS": 0.2
+    },
+    "3": {
+      "b": [
+        -203.30520352897918,
+        -361.1858540188975,
+        6651.804925081357
+      ],
+      "noiseUt": 14.655423471912483,
+      "force": 0,
+      "temp": 24.531473542394032,
+      "highFraction": 0,
+      "forceUsable": true,
+      "fieldRateFloorUtS": 152.41968097963297,
+      "forceRateFloorNS": 0.2
+    },
+    "imu": {
+      "acc": [
+        9.226056,
+        -1.096544,
+        3.192668
+      ],
+      "gyr": [
+        -0.034587,
+        0.003725,
+        -0.022881
+      ],
+      "roll": -0.33083396787736447,
+      "pitch": -1.2200357444534367
+    }
+  },
+  "firmware_spans": [
+    {
+      "ch": 0,
+      "ready": true,
+      "unit": [
+        -0.094715,
+        -0.625167,
+        0.774723
+      ],
+      "gain_n_per_ut": 0.000318,
+      "reference_n": 5
+    },
+    {
+      "ch": 1,
+      "ready": true,
+      "unit": [
+        -0.133947,
+        -0.175527,
+        -0.97532
+      ],
+      "gain_n_per_ut": 0.000605,
+      "reference_n": 5
+    },
+    {
+      "ch": 2,
+      "ready": true,
+      "unit": [
+        0.6471,
+        -0.095134,
+        0.756446
+      ],
+      "gain_n_per_ut": 0.00014,
+      "reference_n": 5
+    },
+    {
+      "ch": 3,
+      "ready": true,
+      "unit": [
+        -0.066627,
+        0.150002,
+        0.986438
+      ],
+      "gain_n_per_ut": 0.000343,
+      "reference_n": 5
+    }
+  ]
+}

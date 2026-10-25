@@ -102,7 +102,9 @@ function connect() {
   ws.onmessage = async (event) => {
     try {
       const text = typeof event.data === "string" ? event.data : await event.data.text();
-      processFrame(JSON.parse(text), text);
+      const msg = JSON.parse(text);
+      if (msg && msg.type === "calibration") { onFirmwareCalibration(msg); return; }
+      processFrame(msg, text);
     } catch (e) { alert("bad", `Rejected WebSocket message: ${e.message}`, "parse"); }
   };
   ws.onerror = () => {};
@@ -290,6 +292,7 @@ function processFrame(frame, originalText = null) {
     S.derivedLog.push(derivedRow(frame, snap)); if (S.derivedLog.length > 100000) S.derivedLog.shift();
   }
   render(frame, snap);
+  window.Ouch?.feed(snap);
 }
 
 function derivedRow(frame, snap) {
@@ -441,6 +444,58 @@ async function replayFile(file) {
     if (i < lines.length) requestAnimationFrame(step); else { setConnection("", "Replay complete"); toast(`Replayed ${lines.length} JSONL frames.`); } };
   setConnection("live", "Replaying"); step();
 }
+
+// ---- calibration export / import -------------------------------------------------
+// File = dashboard config (assignments, areas, reference loads), the host zero baseline, and the
+// glove's force spans (read with get_cal, restored with set_cal; only the primary client may restore).
+let calWaiter = null;
+function onFirmwareCalibration(msg) { S.fwCal = msg; if (calWaiter) { calWaiter(msg); calWaiter = null; } }
+function askFirmwareCalibration(timeoutMs = 1500) {
+  if (S.socket?.readyState !== WebSocket.OPEN) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => { calWaiter = null; resolve(null); }, timeoutMs);
+    calWaiter = (m) => { clearTimeout(timer); resolve(m); };
+    S.socket.send(JSON.stringify({cmd: "get_cal"}));
+  });
+}
+async function exportCalibration() {
+  const fw = await askFirmwareCalibration();
+  const file = {kind: "dermis-calibration", version: 1, exported_at: new Date().toISOString(),
+    device_id: fw?.device_id ?? null, assignments: S.assignments, areas: S.areas, references: S.references,
+    baseline: S.baseline, firmware_spans: fw?.spans ?? null};
+  download(`dermis-calibration-${Date.now()}.json`, "application/json", JSON.stringify(file, null, 2));
+  toast(fw ? `Calibration exported (${fw.spans.filter((x) => x.ready).length}/4 force spans from glove).`
+           : "Exported without glove force spans (not connected or glove did not answer).");
+}
+async function importCalibration(file) {
+  let data;
+  try { data = JSON.parse(await file.text()); } catch (e) { return toast(`Not valid JSON: ${e.message}`); }
+  if (data?.kind !== "dermis-calibration" || data.version !== 1) return toast("Not a Dermis calibration file (kind/version mismatch).");
+  const pick = (obj, keys, ok) => Object.fromEntries(keys.filter((k) => ok(obj?.[k])).map((k) => [k, obj[k]]));
+  const chs = ["0", "1", "2", "3"];
+  S.assignments = {...S.assignments, ...pick(data.assignments, chs, (v) => PATCHES.includes(v))};
+  S.areas = {...S.areas, ...pick(data.areas, PATCHES, (v) => Number.isFinite(v) && v > 0)};
+  S.references = {...S.references, ...pick(data.references, chs, (v) => Number.isFinite(v) && v > 0 && v <= 9.80665)};
+  saveConfig(); setupCards();
+  const base = data.baseline && typeof data.baseline === "object" ? data.baseline : {};
+  const usable = Object.entries(base).filter(([k, b]) => (k === "imu" || chs.includes(k)) && b && typeof b === "object");
+  if (usable.length) { S.baseline = Object.fromEntries(usable); S.calibration = null; $("calState").textContent = "imported zero · re-zero if the glove drifted"; }
+  let pushed = "";
+  const spans = Array.isArray(data.firmware_spans) ? data.firmware_spans.filter((x) => x?.ready) : [];
+  if (spans.length) {
+    if (S.socket?.readyState === WebSocket.OPEN) {
+      const reply = askFirmwareCalibration(2000);   // the glove answers set_cal with its new state
+      S.socket.send(JSON.stringify({cmd: "set_cal", spans}));
+      const fw = await reply;
+      const n = fw ? fw.spans.filter((x) => x.ready).length : null;
+      pushed = n === null ? " Glove did not confirm (only the primary client can restore spans)."
+        : n >= spans.length ? ` ${n}/4 force spans restored on glove.` : ` Glove has ${n}/4 spans; this client may be view-only.`;
+    } else pushed = " Connect to the glove and import again to restore its force spans.";
+  }
+  toast(`Calibration imported.${pushed}`);
+}
+$("exportCal").onclick = exportCalibration;
+$("importCal").onchange = (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) importCalibration(f); };
 
 const query = new URLSearchParams(location.search);
 $("wsUrl").value = query.get("ws") || localStorage.getItem("dermis.wsUrl") || $("wsUrl").value;

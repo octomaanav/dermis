@@ -5,12 +5,18 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Dermis Glove Lab</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="ouch.css">
 </head>
 <body>
   <header>
     <div class="brand"><span>DERMIS</span><small>GLOVE LAB</small></div>
     <div class="connection"><i id="statusDot"></i><b id="statusText">Offline</b><span id="rateText">0.0 Hz</span></div>
     <label class="url"><span>Glove WebSocket</span><input id="wsUrl" value="ws://192.168.4.1:81/ws"></label>
+    <div id="ouchWrap" title="Arm, then squeeze the glove hand to trigger once">
+      <button id="ouchBtn" aria-pressed="false">🤝 OUCH MODE <b id="ouchState">OFF</b></button>
+      <label class="ouch-force" title="Squeeze force per patch needed to trigger (newtons)"><input id="ouchForce" type="number" min="1" max="9" step="1" value="2" inputmode="numeric" aria-label="Trigger force in newtons"><span>N</span></label>
+      <button id="ouchTest">test</button>
+    </div>
     <button id="connectBtn" class="primary">Connect</button>
     <button id="calibrateBtn">Calibrate zero</button>
     <button id="recordBtn" class="recording">● Recording</button>
@@ -102,6 +108,7 @@
         <div class="panel-title"><div><span>SESSION & EXPORT</span><small>raw frames and derived values stay local</small></div></div>
         <div class="actions">
           <button id="exportJson">Export raw JSONL</button><button id="exportCsv">Export derived CSV</button><button id="clearLog" class="danger">Clear log</button>
+          <button id="exportCal" title="Glove force spans + zero + assignments">Export calibration</button><label class="file">Import calibration<input id="importCal" type="file" accept=".json"></label>
           <label class="file">Replay JSONL<input id="replayFile" type="file" accept=".jsonl,.json"></label>
         </div>
         <div class="session-grid"><div><span>Frames</span><b id="frameCount">0</b></div><div><span>Dropped IDs</span><b id="dropCount">0</b></div><div><span>Interval jitter</span><b id="jitter">—</b></div><div><span>Log size</span><b id="logSize">0 B</b></div></div>
@@ -110,7 +117,12 @@
     </section>
   </main>
   <div id="toast"></div>
+  <div id="ouch" hidden role="alert" aria-live="assertive">
+    <span class="star">⭐</span><span class="star">💥</span><span class="star">⭐</span><span class="star">💫</span><span class="star">💥</span>
+    <div class="burst"><span class="hand">🤕✋</span><h1>OUCH!!!</h1><div class="sub">that's a firm handshake!</div><span class="info" id="ouchInfo"></span></div>
+  </div>
   <script src="derivations.js"></script>
   <script src="app.js"></script>
+  <script src="ouch.js"></script>
 </body>
 </html>

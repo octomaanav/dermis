@@ -1,0 +1,3 @@
+hurt1-5.mp3 are clips cut from "Man hurt sounds" (ManHurt.ogg) on OpenGameArt.org,
+https://opengameart.org/node/20720 , released under CC0 1.0 (public domain dedication).
+cartoon1-5.mp3 are hurt1-5.mp3 pitch-shifted up and mixed with a synthesized spring "boing" (generated with ffmpeg); also CC0 / derived from CC0.
